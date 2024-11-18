@@ -6,17 +6,17 @@ import (
     "math/rand"
     "os"
     "time"
+    "strings"
     "gopkg.in/telebot.v3"
     "github.com/joho/godotenv"
 )
 
 type SessionInfo struct {
-    currentUserId string
-    currentUserName string
-    currentChanelId string
-    currentUserAdmin bool
+    currentUserId        string
+    currentUserName      string
+    currentChanelId      string
+    currentUserAdmin     bool
     currentChanelBotAdmin bool
-    typeVerification string
 }
 
 var sessionStorage = make(map[string]SessionInfo)
@@ -41,24 +41,27 @@ func main() {
         log.Fatal(err)
     }
 
-    var userName string
+    var currentSessionID string
+    var awaitingChannelLink bool
 
     bot.Handle("/start", func(c telebot.Context) error {
-        userName = ""
+        currentSessionID = ""
+        awaitingChannelLink = false
         return c.Send("What's your name?")
     })
 
     bot.Handle(telebot.OnText, func(c telebot.Context) error {
-        if userName == "" {
-            userName = c.Text()
+        if currentSessionID == "" {
+            userName := c.Text()
 
             sessionID := fmt.Sprintf("%08d", rand.Intn(100000000))
+            currentSessionID = sessionID
 
             session := SessionInfo{
                 currentUserId:   fmt.Sprintf("%d", c.Sender().ID),
                 currentUserName: userName,
-                currentChanelId: "", // Можно обновить позже, если требуется
-                currentUserAdmin: false, // Примерные значения, можно обновить при необходимости
+                currentChanelId: "",
+                currentUserAdmin: false,
                 currentChanelBotAdmin: false,
             }
 
@@ -66,78 +69,79 @@ func main() {
 
             log.Printf("New session created: %v\n", sessionStorage[sessionID])
 
-            reply := fmt.Sprintf("Hello, %s!", userName)
+            reply := fmt.Sprintf("Hello, %s! To get started, you need to add your channel. To do this, use the /regchat command.", userName)
             return c.Send(reply)
         }
-        return nil
-    })
 
-    bot.Handle("/regchat", func(c telebot.Context) error {
-        // Убедимся, что сессия активна
-        if currentSessionID == "" {
-            return c.Send("Please start a session by typing /start.")
-        }
-
-        // Запрашиваем ссылку на канал
-        return c.Send("Please provide the link to your channel (e.g. https://t.me/your_channel).")
-    })
-
-    bot.Handle(telebot.OnText, func(c telebot.Context) error {
-        // Проверяем, если это ссылка на канал
-        if len(c.Text()) > 7 && c.Text()[0:7] == "https://" {
-            // Извлекаем ID канала из URL
-            channelUsername := c.Text()[8:] // Убираем https://t.me/
-
-            // Получаем информацию о канале
-            chat, err := bot.ChatByUsername(channelUsername)
-            if err != nil {
-                log.Printf("Error fetching channel info: %v", err)
-                return c.Send("Failed to fetch channel information. Please check the link.")
-            }
-
-            // Получаем информацию о боте в этом канале
-            botMember, err := bot.ChatMemberOf(chat, bot.Me)
-            if err != nil {
-                log.Printf("Error fetching bot role in channel: %v", err)
-                return c.Send("Error fetching bot role in this channel.")
-            }
-
-            // Проверяем, является ли бот администратором
-            isBotAdmin := botMember.Role == telebot.Administrator || botMember.Role == telebot.Creator
-
-            // Получаем информацию о пользователе
-            userMember, err := bot.ChatMemberOf(chat, c.Sender())
-            if err != nil {
-                log.Printf("Error fetching user role in channel: %v", err)
-                return c.Send("Error fetching user role in this channel.")
-            }
-
-            // Проверяем, является ли пользователь администратором
-            isUserAdmin := userMember.Role == telebot.Administrator || userMember.Role == telebot.Creator
-
-            // Если и бот, и пользователь являются администраторами, обновляем сессию
-            if isBotAdmin && isUserAdmin {
-                // Обновляем данные сессии
+        // Checking if the bot is expecting a channel link
+        if awaitingChannelLink {
+            awaitingChannelLink = false
+            channelLink := c.Text()
+            if strings.HasPrefix(channelLink, "https://t.me/") {
+                channelUsername := strings.TrimPrefix(channelLink, "https://t.me/")
+                log.Println("Channel username:", channelUsername)
+                channelUsername = "@" + channelUsername
+    
+                //Getting information about the channel
+                chat, err := bot.ChatByUsername(channelUsername)
+                if err != nil {
+                    log.Printf("Error getting channel information:: %v", err)
+                    return c.Send("Failed to get channel information. Check the link.")
+                }
+    
+                // Checking if the bot is an administrator
+                botMember, err := bot.ChatMemberOf(chat, bot.Me)
+                if err != nil {
+                    log.Printf("Error checking bot role in channel: %v", err)
+                    return c.Send("Failed to check the bot's role in the channel. Make sure you have added the bot to the channel as an administrator")
+                }
+    
+                isBotAdmin := botMember.Role == telebot.Administrator || botMember.Role == telebot.Creator
+    
+                if !isBotAdmin {
+                    return c.Send("The bot must be the administrator of this channel. Add the bot as an administrator and try again.")
+                }
+    
+                // Checking if the user is an administrator
+                userMember, err := bot.ChatMemberOf(chat, c.Sender())
+                if err != nil {
+                    log.Printf("Error checking user role in channel: %v", err)
+                    return c.Send("The bot cannot verify your role in this channel. Make sure he is an administrator.")
+                }
+    
+                isUserAdmin := userMember.Role == telebot.Administrator || userMember.Role == telebot.Creator
+    
+                if !isUserAdmin {
+                    return c.Send("You must be an administrator of this channel to register it.")
+                }
+    
+                // Updating session data
                 session := sessionStorage[currentSessionID]
                 session.currentChanelId = fmt.Sprintf("%d", chat.ID)
                 session.currentUserAdmin = true
                 session.currentChanelBotAdmin = true
                 sessionStorage[currentSessionID] = session
-
-                // Выводим данные сессии в консоль
-                currentSessionID := 
+    
                 log.Printf("Session updated: %v\n", sessionStorage[currentSessionID])
-
-                return c.Send("Channel successfully registered!")
+    
+                return c.Send("The channel has been successfully registered! The bot also has administrator rights.")
             }
+    
+            return c.Send("Invalid link format. Please provide the link in the format https://t.me/your_channel.")
+        }
+        
 
-            return c.Send("Both you and the bot must be admins in this channel to register it.")
+        return nil
+    })
+
+    bot.Handle("/regchat", func(c telebot.Context) error {
+        if currentSessionID == "" {
+            return c.Send("Please start your session using the command /start.")
         }
 
-        return c.Send("Invalid channel link. Please provide a valid link in the format https://t.me/your_channel.")
+        awaitingChannelLink = true
+        return c.Send("Send me a link to your channel (for example, https://t.me/your_channel). Before doing this, add the bot as an administrator to your channel.")
     })
-    
-    
 
     bot.Start()
 }
