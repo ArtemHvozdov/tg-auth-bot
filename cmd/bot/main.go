@@ -5,10 +5,11 @@ import (
     "log"
     "math/rand"
     "os"
-    "time"
     "strings"
-    "gopkg.in/telebot.v3"
+    "time"
+
     "github.com/joho/godotenv"
+    "gopkg.in/telebot.v3"
 )
 
 type SessionInfo struct {
@@ -44,6 +45,21 @@ func main() {
     var currentSessionID string
     var awaitingChannelLink bool
 
+    // Кнопки для выбора схемы
+    menu := &telebot.ReplyMarkup{}
+    btnScheme1 := menu.Data("Scheme 1", "scheme1")
+    btnScheme2 := menu.Data("Scheme 2", "scheme2")
+    btnScheme3 := menu.Data("Scheme 3", "scheme3")
+    btnScheme4 := menu.Data("Scheme 4", "scheme4")
+    btnCustom := menu.Data("Add a custom scheme", "custom_scheme")
+
+    // Ряд кнопок
+    menu.Inline(
+        menu.Row(btnScheme1, btnScheme2),
+        menu.Row(btnScheme3, btnScheme4),
+        menu.Row(btnCustom),
+    )
+
     bot.Handle("/start", func(c telebot.Context) error {
         currentSessionID = ""
         awaitingChannelLink = false
@@ -58,10 +74,10 @@ func main() {
             currentSessionID = sessionID
 
             session := SessionInfo{
-                currentUserId:   fmt.Sprintf("%d", c.Sender().ID),
-                currentUserName: userName,
-                currentChanelId: "",
-                currentUserAdmin: false,
+                currentUserId:        fmt.Sprintf("%d", c.Sender().ID),
+                currentUserName:      userName,
+                currentChanelId:      "",
+                currentUserAdmin:     false,
                 currentChanelBotAdmin: false,
             }
 
@@ -81,55 +97,62 @@ func main() {
                 channelUsername := strings.TrimPrefix(channelLink, "https://t.me/")
                 log.Println("Channel username:", channelUsername)
                 channelUsername = "@" + channelUsername
-    
+
                 //Getting information about the channel
                 chat, err := bot.ChatByUsername(channelUsername)
                 if err != nil {
                     log.Printf("Error getting channel information:: %v", err)
                     return c.Send("Failed to get channel information. Check the link.")
                 }
-    
+
                 // Checking if the bot is an administrator
                 botMember, err := bot.ChatMemberOf(chat, bot.Me)
                 if err != nil {
                     log.Printf("Error checking bot role in channel: %v", err)
                     return c.Send("Failed to check the bot's role in the channel. Make sure you have added the bot to the channel as an administrator")
                 }
-    
+
                 isBotAdmin := botMember.Role == telebot.Administrator || botMember.Role == telebot.Creator
-    
+
                 if !isBotAdmin {
                     return c.Send("The bot must be the administrator of this channel. Add the bot as an administrator and try again.")
                 }
-    
+
                 // Checking if the user is an administrator
                 userMember, err := bot.ChatMemberOf(chat, c.Sender())
                 if err != nil {
                     log.Printf("Error checking user role in channel: %v", err)
                     return c.Send("The bot cannot verify your role in this channel. Make sure he is an administrator.")
                 }
-    
+
                 isUserAdmin := userMember.Role == telebot.Administrator || userMember.Role == telebot.Creator
-    
+
                 if !isUserAdmin {
                     return c.Send("You must be an administrator of this channel to register it.")
                 }
-    
+
                 // Updating session data
                 session := sessionStorage[currentSessionID]
                 session.currentChanelId = fmt.Sprintf("%d", chat.ID)
                 session.currentUserAdmin = true
                 session.currentChanelBotAdmin = true
                 sessionStorage[currentSessionID] = session
-    
+
                 log.Printf("Session updated: %v\n", sessionStorage[currentSessionID])
-    
-                return c.Send("The channel has been successfully registered! The bot also has administrator rights.")
+
+                // Уведомление о регистрации
+                c.Send("The channel has been successfully registered! The bot also has administrator rights.")
+
+                // Отправка сообщения через одну секунду
+                time.AfterFunc(1*time.Second, func() {
+                    bot.Send(c.Sender(), "The following schemes are available to verify new subscribers:", menu)
+                })
+
+                return nil
             }
-    
+
             return c.Send("Invalid link format. Please provide the link in the format https://t.me/your_channel.")
         }
-        
 
         return nil
     })
