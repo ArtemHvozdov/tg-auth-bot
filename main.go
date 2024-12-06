@@ -19,9 +19,9 @@ import (
 
 func main() {
 
-	cfg := config.LoadConfig() // Загружаем конфигурацию из файла или переменных окружения
+	cfg := config.LoadConfig() // Loading the configuration from a file or environment variables
 
-	// Запускаем Telegram-бота в отдельной горутине
+	// We launch the Telegram bot in a separate goroutine
 	go func() {
 		err := bot.StartBot(cfg)
 		if err != nil {
@@ -29,6 +29,6 @@ func main() {
 		}
 	}()
 
-	// Запускаем веб-сервер
+	// Run webserver
 	web.StartServer()
 }

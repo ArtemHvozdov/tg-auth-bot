@@ -6,7 +6,7 @@ import (
 	"github.com/ArtemHvozdov/tg-auth-bot/auth"
 )
 
-// StartServer запускает веб-сервер
+// StartServer run webserver
 func StartServer() {
 	//http.HandleFunc("/api/sign-in", auth.GetAuthRequest)
 	http.HandleFunc("/api/callback", auth.Callback)

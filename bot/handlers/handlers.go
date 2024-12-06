@@ -4,30 +4,17 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
-	"strconv"
-	"sync"
+	//"strconv"
+	//"sync"
 	"github.com/ArtemHvozdov/tg-auth-bot/auth"
+	"github.com/ArtemHvozdov/tg-auth-bot/storage"
+
 	"time"
 
 	"gopkg.in/telebot.v3"
 )
 
-// Вспомогательные структуры
-type UserVerification struct {
-	UserID    int64
-	Username  string
-	GroupID   int64
-	GroupName string
-	IsPending bool
-	verified  bool
-}
-
-var (
-	verificationData = make(map[int64]*UserVerification)
-	dataMutex        = sync.Mutex{}
-)
-
-// isAdmin проверяет, является ли пользователь администратором группы
+// isAdmin checks if the user is a group admin
 func isAdmin(bot *telebot.Bot, chatID int64, userID int64) bool {
 	member, err := bot.ChatMemberOf(&telebot.Chat{ID: chatID}, &telebot.User{ID: userID})
 	if err != nil {
@@ -37,7 +24,7 @@ func isAdmin(bot *telebot.Bot, chatID int64, userID int64) bool {
 	return member.Role == "administrator" || member.Role == "creator"
 }
 
-// Новый пользователь присоединился к группе
+// A new user has joined the group
 func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 	return func(c telebot.Context) error {
 		for _, member := range c.Message().UsersJoined {
@@ -46,16 +33,19 @@ func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 				continue
 			}
 
-			dataMutex.Lock()
-			verificationData[member.ID] = &UserVerification{
+			// Adding a new user to the repository
+			newUser := &storage.UserVerification{
 				UserID:    member.ID,
 				Username:  member.Username,
 				GroupID:   c.Chat().ID,
 				GroupName: c.Chat().Title,
 				IsPending: true,
-				verified:  false,
+				Verified:  false,
+				SessionID: 0,
 			}
-			dataMutex.Unlock()
+			storage.AddOrUpdateUser(member.ID, newUser)
+
+			log.Println("Bot Logs: new member -", newUser)
 
 			btn := telebot.InlineButton{
 				Text: "Verify your age",
@@ -75,15 +65,12 @@ func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 	}
 }
 
-// Обработчик команды /start
+// Handler /start
 func StartHandler(bot *telebot.Bot) func(c telebot.Context) error {
 	return func(c telebot.Context) error {
 		userID := c.Sender().ID
 
-		dataMutex.Lock()
-		userData, exists := verificationData[userID]
-		dataMutex.Unlock()
-
+		userData, exists := storage.GetUser(userID)
 		if !exists || !userData.IsPending {
 			log.Printf("User @%s (ID: %d) is not awaiting verification.", c.Sender().Username, userID)
 			return c.Send("You are not awaiting verification in any group.")
@@ -98,83 +85,75 @@ func StartHandler(bot *telebot.Bot) func(c telebot.Context) error {
 			return err
 		}
 
-		jsonData, _ := auth.GenerateAuthRequest()
+		jsonData, _ := auth.GenerateAuthRequest(userID)
 
 		base64Data := base64.StdEncoding.EncodeToString(jsonData)
 
-		// Создание диплинка
+		// Create deeplink
 		deepLink := fmt.Sprintf("https://wallet.privado.id/#i_m=%s", base64Data)
 
-		// Вывод диплинка
+		// logs deeplinl
 		log.Println("Deep Link:", deepLink)
 
+		btn := telebot.InlineButton{
+			Text: "Verify with Privado ID", // Text button
+			URL:  deepLink,                // URL for redirect
+		}
+
+		// Creating markup with a button
+		inlineKeyboard := &telebot.ReplyMarkup{}
+		inlineKeyboard.InlineKeyboard = [][]telebot.InlineButton{{btn}}
+
 		time.Sleep(2 * time.Second)
-		return c.Send(deepLink)
-
-		// time.Sleep(2 * time.Second)
-		// return c.Send("How old are you?")
+		// Send a message with a button
+		return c.Send("Please click the button below to verify your age:", inlineKeyboard)
 	}
 }
 
-// Обработчик текстовых сообщений
-func TextMessageHandler(bot *telebot.Bot) func(c telebot.Context) error {
-	return func(c telebot.Context) error {
-		userID := c.Sender().ID
-
-		dataMutex.Lock()
-		userData, exists := verificationData[userID]
-		dataMutex.Unlock()
-
-		if !exists || !userData.IsPending {
-			log.Printf("User @%s (ID: %d) attempted age verification without being in the queue.", c.Sender().Username, userID)
-			return c.Send("You are not awaiting verification.")
-		}
-
-		age, err := strconv.Atoi(c.Text())
-		if err != nil {
-			return c.Send("Please enter a valid age in numbers.")
-		}
-
-		handleAgeVerification(bot, userID, userData, age, c)
-
-		return nil
-	}
-}
-
-// Обработка истечения времени на верификацию
+// Handling verification timeout
 func handleVerificationTimeout(bot *telebot.Bot, userID, groupID int64) {
-	time.Sleep(5 * time.Minute)
+	time.Sleep(10 * time.Minute)
 
-	dataMutex.Lock()
-	userData, exists := verificationData[userID]
-	if exists && userData.IsPending && !userData.verified {
+	userData, exists := storage.GetUser(userID)
+	if exists && userData.IsPending && !userData.Verified {
 		log.Printf("User @%s (ID: %d) failed verification on time. Removing from group.", userData.Username, userID)
 		bot.Ban(&telebot.Chat{ID: groupID}, &telebot.ChatMember{User: &telebot.User{ID: userID}})
 		time.Sleep(1 * time.Second)
 		bot.Unban(&telebot.Chat{ID: groupID}, &telebot.User{ID: userID})
 		bot.Send(&telebot.User{ID: userID}, "You did not complete the verification on time and were removed from the group.")
-		delete(verificationData, userID)
+		storage.DeleteUser(userID)
 	}
-	dataMutex.Unlock()
 }
 
-// Обработка верификации возраста
-func handleAgeVerification(bot *telebot.Bot, userID int64, userData *UserVerification, age int, c telebot.Context) {
-	if age < 18 {
-		log.Printf("User @%s (ID: %d) is under 18. Banned from the group.", userData.Username, userID)
-		userData.verified = false
-		userData.IsPending = false
-		bot.Ban(&telebot.Chat{ID: userData.GroupID}, &telebot.ChatMember{User: &telebot.User{ID: userID}})
-		c.Send("Sorry, access denied. You must be 18 or older.")
-		bot.Unban(&telebot.Chat{ID: userData.GroupID}, &telebot.User{ID: userID})
-		c.Send("You were removed from the group.")
-		delete(verificationData, userID)
-	} else {
-		log.Printf("User @%s (ID: %d) successfully verified.", userData.Username, userID)
-		userData.verified = true
-		dataMutex.Lock()
-		delete(verificationData, userID)
-		dataMutex.Unlock()
-		c.Send("Thank you! You have successfully passed the verification.")
-	}
+// Store change listener
+func ListenForStorageChanges(bot *telebot.Bot) {
+	go func() {
+		for event := range storage.DataChanges {
+			userID := event.UserID
+			data := event.Data
+
+			if data == nil {
+				// User was delete
+				log.Printf("User ID: %d was removed from the store.", userID)
+				continue
+			}
+
+			if !data.IsPending {
+				if data.Verified {
+					// Successful verification
+					log.Printf("User @%s (ID: %d) passed verification.", data.Username, userID)
+					bot.Send(&telebot.User{ID: userID}, "You have successfully passed verification and can stay in the group.")
+				} else {
+					// Verification failed
+					log.Printf("User @%s (ID: %d) failed verification. Removing from group.", data.Username, userID)
+					group := &telebot.Chat{ID: data.GroupID}
+					user := &telebot.User{ID: userID}
+					bot.Ban(group, &telebot.ChatMember{User: user})
+					time.Sleep(1 * time.Second)
+					bot.Unban(group, user)
+					bot.Send(user, "You failed verification and were removed from the group.")
+				}
+			}
+		}
+	}()
 }
