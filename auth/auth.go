@@ -42,7 +42,7 @@ var requestMap = make(map[string]AuthRequestData)
 
 // GenerateAuthRequest generates a new authentication request and returns it as a JSON object
 func GenerateAuthRequest(userID int64) ([]byte, error) {
-	rURL := "https://2e7c-91-244-33-211.ngrok-free.app" // Updatesd with your actual URL
+	rURL := "https://eb69-109-72-122-36.ngrok-free.app" // Updatesd with your actual URL
 	// sessionID := 1                                     // Use unique session IDs in production
 	sessionID := int(time.Now().UnixNano())
 
@@ -66,7 +66,7 @@ func GenerateAuthRequest(userID int64) ([]byte, error) {
 		"allowedIssuers": []string{"*"},
 		"credentialSubject": map[string]interface{}{
 			"birthday": map[string]interface{}{
-				"$lt": 19950101,
+				"$lt": 20000101,
 			},
 		},
 		"context": "https://raw.githubusercontent.com/iden3/claim-schema-vocab/main/schemas/json-ld/kyc-v4.jsonld",
@@ -108,7 +108,7 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ethURL := "https://polygon-amoy.infura.io/v3/<INFURA_KEY>"
+	ethURL := "https://polygon-amoy.infura.io/v3/a1e81bcaca104bf9ad54f4e88b4c3554"
 	contractAddress := "0x1a4cC30f2aA0377b0c3bc9848766D90cb4404124"
 	resolverPrefix := "polygon:amoy"
 	

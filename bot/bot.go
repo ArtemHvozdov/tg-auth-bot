@@ -28,6 +28,17 @@ func StartBot(cfg config.Config) error {
 		return fmt.Errorf("error creating bot: %v", err)
 	}
 
+	// Установка доступных команд
+	err = Bot.SetCommands([]telebot.Command{
+		{Text: "start", Description: "Launch bot"},
+		{Text: "verify", Description: "Go through verification"},
+		{Text: "setup", Description: "Configure verification settings"},
+		{Text: "help", Description: "Get information about commands"},
+	})
+	if err != nil {
+		log.Printf("Failed to set bot commands: %v", err)
+	}
+
 	InstanceBot = Bot
 
 	handlers.ListenForStorageChanges(Bot)
@@ -35,6 +46,7 @@ func StartBot(cfg config.Config) error {
 	// Handlers
 	Bot.Handle(telebot.OnUserJoined, handlers.NewUserJoinedHandler(Bot))
 	Bot.Handle("/start", handlers.StartHandler(Bot))
+	Bot.Handle("/verify", handlers.VerifyHandler(Bot))
 	// bot.Handle(telebot.OnText, handlers.TextMessageHandler(bot))
 
 	log.Println("Bot started...")

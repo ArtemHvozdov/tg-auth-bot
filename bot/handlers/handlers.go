@@ -24,6 +24,22 @@ func isAdmin(bot *telebot.Bot, chatID int64, userID int64) bool {
 	return member.Role == "administrator" || member.Role == "creator"
 }
 
+// Handler for /start
+func StartHandler(bot *telebot.Bot) func(c telebot.Context) error {
+    return func(c telebot.Context) error {
+        userName := c.Sender().FirstName
+        if c.Sender().LastName != "" {
+            userName += " " + c.Sender().Username
+        }
+
+        msg := fmt.Sprintf(
+            "Hello, %s!\n\nIf you want to be verified, run the command /verify.\nIf you want to configure the bot to verify participants, run the command /setup.",
+            userName,
+        )
+        return c.Send(msg)
+    }
+}
+
 // A new user has joined the group
 func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 	return func(c telebot.Context) error {
@@ -65,8 +81,8 @@ func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 	}
 }
 
-// Handler /start
-func StartHandler(bot *telebot.Bot) func(c telebot.Context) error {
+// Handler /verify
+func VerifyHandler(bot *telebot.Bot) func(c telebot.Context) error {
 	return func(c telebot.Context) error {
 		userID := c.Sender().ID
 
