@@ -39,6 +39,94 @@ func StartHandler(bot *telebot.Bot) func(c telebot.Context) error {
         return c.Send(msg)
     }
 }
+// /setup command - administrator initiates configuration
+func SetupHandler(bot *telebot.Bot) func(c telebot.Context) error {
+	return func(c telebot.Context) error {
+		// Шаг 1: Отправляем сообщение о необходимости добавить бота в группу с правами администратора
+		msg := "To set me up for verification in your group, please add me to the group as an administrator and call the /check_admin command in the group."
+		if err := c.Send(msg); err != nil {
+			log.Printf("Error sending setup message: %v", err)
+			return err
+		}
+		return nil
+	}
+}
+
+// /check_admin command - check administrator rights in a group
+func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
+    return func(c telebot.Context) error {
+        // Getting information about the chat and the user
+        chatID := c.Chat().ID
+        userID := c.Sender().ID
+        chatName := c.Chat().Title // Getting the name of the chat (group)
+        userName := c.Sender().Username // Username
+
+        log.Printf("User ID: %d, Chat ID: %d, Command received", userID, chatID)
+        log.Printf("User's name: %s %s (@%s)", c.Sender().FirstName, c.Sender().LastName, c.Sender().Username)
+
+        // Checking if the bot is an administrator in this group
+        member, err := bot.ChatMemberOf(&telebot.Chat{ID: chatID}, &telebot.User{ID: bot.Me.ID})
+        if err != nil {
+            log.Printf("Error fetching bot's role in the group: %v", err)
+            // Send a private message to the user
+            msg := "I couldn't fetch my role in this group. Please make sure I am an administrator."
+            if _, err := bot.Send(&telebot.User{ID: userID}, msg); err != nil {
+                log.Printf("Error sending bot admin check message: %v", err)
+                return err
+            }
+            return nil
+        }
+
+        // Logging the bot's role
+        log.Printf("Bot's role in the group '%s': %s", chatName, member.Role)
+
+        // Checking if the bot is an administrator
+        if member.Role != "administrator" && member.Role != "creator" {
+            msg := fmt.Sprintf("I am not an administrator in the group '%s'. Please promote me to an administrator.", chatName)
+            if _, err := bot.Send(&telebot.User{ID: userID}, msg); err != nil {
+                log.Printf("Error sending bot admin check message: %v", err)
+                return err
+            }
+            return nil
+        }
+
+        // Checking if the user the bot is interacting with is an administrator
+        memberUser, err := bot.ChatMemberOf(&telebot.Chat{ID: chatID}, &telebot.User{ID: userID})
+        if err != nil {
+            log.Printf("Error fetching user's role: %v", err)
+            // Send a private message to the user
+            msg := "I couldn't fetch your role in this group."
+            if _, err := bot.Send(&telebot.User{ID: userID}, msg); err != nil {
+                log.Printf("Error sending user admin check message: %v", err)
+                return err
+            }
+            return nil
+        }
+
+        // Logging the user role
+        log.Printf("User's role in the group '%s': %s", chatName, memberUser.Role)
+
+        // Checking if the user is an administrator
+        if memberUser.Role != "administrator" && memberUser.Role != "creator" {
+            // We inform the user that he is not an administrator
+            groupMsg := fmt.Sprintf("@%s, you are not an administrator in the group '%s'. You cannot configure me for this group.", userName, chatName)
+            if _, err := bot.Send(&telebot.Chat{ID: chatID}, groupMsg); err != nil {
+                log.Printf("Error sending message to group: %v", err)
+                return err
+            }
+            return nil
+        }
+
+        // All checks were successful
+        msg := fmt.Sprintf("I have confirmed your admin status and my role in the group '%s'. You can now proceed with the setup.", chatName)
+        if _, err := bot.Send(&telebot.User{ID: userID}, msg); err != nil {
+            log.Printf("Error sending success message to user: %v", err)
+            return err
+        }
+
+        return nil
+    }
+}
 
 // A new user has joined the group
 func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
