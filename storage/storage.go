@@ -82,3 +82,14 @@ func GetUser(userID int64) (*UserVerification, bool) {
 	user, exists := UserStore[userID]
 	return user, exists
 }
+
+
+// Struct for the parametrs of verification
+type VerificationParams struct {
+	CircuitID        string                 `json:"circuitId"`
+	ID               string                 `json:"id"`
+	Query            map[string]interface{} `json:"query"`
+}
+
+// Struct paramets: ID Group - auth parametrs
+var VerificationParamsMap = make(map[int64]VerificationParams)
