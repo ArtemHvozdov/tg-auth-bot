@@ -41,7 +41,7 @@ func (m KeyLoader) Load(id circuits.CircuitID) ([]byte, error) {
 var requestMap = make(map[string]AuthRequestData)
 
 // GenerateAuthRequest generates a new authentication request and returns it as a JSON object
-func GenerateAuthRequest(userID int64) ([]byte, error) {
+func GenerateAuthRequest(userID int64, params storage.VerificationParams) ([]byte, error) {
 	rURL := "https://5c86-109-72-122-36.ngrok-free.app" // Updatesd with your actual URL
 	// sessionID := 1                                     // Use unique session IDs in production
 	sessionID := int(time.Now().UnixNano())
@@ -60,19 +60,26 @@ func GenerateAuthRequest(userID int64) ([]byte, error) {
 
 	// Adding a request for proof
 	var mtpProofRequest protocol.ZeroKnowledgeProofRequest
-	mtpProofRequest.ID = 1
-	mtpProofRequest.CircuitID = string(circuits.AtomicQuerySigV2CircuitID)
-	mtpProofRequest.Query = map[string]interface{}{
-		"allowedIssuers": []string{"*"},
-		"credentialSubject": map[string]interface{}{
-			"birthday": map[string]interface{}{
-				"$lt": 20000101,
-			},
-		},
-		"context": "https://raw.githubusercontent.com/iden3/claim-schema-vocab/main/schemas/json-ld/kyc-v4.jsonld",
-		"type":    "KYCAgeCredential",
-	}
+	// mtpProofRequest.ID = 1
+	// mtpProofRequest.CircuitID = string(circuits.AtomicQuerySigV2CircuitID)
+	// mtpProofRequest.Query = map[string]interface{}{
+	// 	"allowedIssuers": []string{"*"},
+	// 	"credentialSubject": map[string]interface{}{
+	// 		"birthday": map[string]interface{}{
+	// 			"$lt": 20000101,
+	// 		},
+	// 	},
+	// 	"context": "https://raw.githubusercontent.com/iden3/claim-schema-vocab/main/schemas/json-ld/kyc-v4.jsonld",
+	// 	"type":    "KYCAgeCredential",
+	// }
+
+
+	mtpProofRequest.ID = params.ID
+	mtpProofRequest.CircuitID = params.CircuitID
+	mtpProofRequest.Query = params.Query
+
 	request.Body.Scope = append(request.Body.Scope, mtpProofRequest)
+
 
 	// Store auth request in map associated with session ID
 	// requestMap[strconv.Itoa(sessionID)] = request

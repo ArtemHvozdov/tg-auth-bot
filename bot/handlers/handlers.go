@@ -129,7 +129,7 @@ func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		bot.Send(&telebot.User{ID: userID}, "Send verification parameters in JSON format in this private chat. Example:\n\n"+
 			"{\n"+
 			"  \"circuitId\": \"AtomicQuerySigV2CircuitID\",\n"+
-			"  \"id\": \"1\",\n"+
+			"  \"id\": 1,\n"+
 			"  \"query\": {\n"+
 			"    \"allowedIssuers\": [\"*\"],\n"+
 			"    \"context\": \"https://example.com/context\",\n"+
@@ -157,7 +157,7 @@ func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 			}
 
 			// Validate required fields in parsed JSON
-			if params.CircuitID == "" || params.ID == "" || params.Query == nil {
+			if params.CircuitID == "" || params.ID == 0 || params.Query == nil {
 				log.Println("JSON does not contain all required fields.")
 				bot.Send(c.Sender(), "Missing required fields in JSON. Please include 'circuitId', 'id', and 'query'.")
 				return nil
@@ -238,7 +238,9 @@ func VerifyHandler(bot *telebot.Bot) func(c telebot.Context) error {
 			return err
 		}
 
-		jsonData, _ := auth.GenerateAuthRequest(userID)
+		userGroupID := storage.UserStore[userID].GroupID
+
+		jsonData, _ := auth.GenerateAuthRequest(userID, storage.VerificationParamsMap[userGroupID])
 
 		base64Data := base64.StdEncoding.EncodeToString(jsonData)
 
