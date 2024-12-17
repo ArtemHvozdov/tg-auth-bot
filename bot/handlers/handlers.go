@@ -186,6 +186,20 @@ func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 				continue
 			}
 
+			// Ограничиваем права нового участника
+			// // restrictedUntil := time.Now().Add(10 * time.Minute).Unix() // Ограничения на 10 минут
+			err := bot.Restrict(c.Chat(), &telebot.ChatMember{
+				User: &telebot.User{ID: member.ID},
+				Rights: telebot.Rights{
+					CanSendMessages: false, // Полный запрет на отправку сообщений
+				},
+				//UntilDate: restrictedUntil, // Опционально: ограничение по времени
+			})
+			if err != nil {
+				log.Printf("Failed to restrict user @%s (ID: %d): %s", member.Username, member.ID, err)
+				continue
+			}
+
 			// Adding a new user to the repository
 			newUser := &storage.UserVerification{
 				UserID:    member.ID,
@@ -297,6 +311,23 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 				if data.Verified {
 					// Successful verification
 					log.Printf("User @%s (ID: %d) passed verification.", data.Username, userID)
+					
+					// New logic code
+
+					chat := &telebot.Chat{ID: storage.UserStore[userID].GroupID}
+
+					err := bot.Restrict(chat, &telebot.ChatMember{
+						User: &telebot.User{ID: userID},
+						Rights: telebot.Rights{
+							CanSendMessages: true, // Полный разрашение на отправку сообщений
+						},
+						//UntilDate: restrictedUntil, // Опционально: ограничение по времени
+					})
+					if err != nil {
+						log.Printf("Failed to restrict user @%s (ID: %d): %s", storage.UserStore[userID].Username, userID, err)
+						continue
+					}
+
 					bot.Send(&telebot.User{ID: userID}, "You have successfully passed verification and can stay in the group.")
 				} else {
 					// Verification failed

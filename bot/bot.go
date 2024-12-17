@@ -63,36 +63,77 @@ func StartBot(cfg config.Config) error {
 
 
 // AdminOnlyMiddleware проверяет роль пользователя
+// Old version
+// func AdminOnlyMiddleware(bot *telebot.Bot) telebot.MiddlewareFunc {
+// 	return func(next telebot.HandlerFunc) telebot.HandlerFunc {
+// 		return func(c telebot.Context) error {
+// 			// Checking whether the command is called in the group
+// 			if c.Chat().Type == telebot.ChatGroup || c.Chat().Type == telebot.ChatSuperGroup {
+// 				// Getting information about the user
+// 				userID := c.Sender().ID
+// 				chatID := c.Chat().ID
+// 				userName := c.Sender().Username
+
+// 				// Checking if the user is an administrator
+// 				member, err := bot.ChatMemberOf(&telebot.Chat{ID: chatID}, &telebot.User{ID: userID})
+// 				if err != nil {
+// 					log.Printf("Error fetching user's role: %v", err)
+// 					return c.Reply("I couldn't verify your role. Please try again later.")
+// 				}
+
+// 				// Если пользователь не администратор
+// 				if member.Role != "administrator" && member.Role != "creator" {
+// 					msg := fmt.Sprintf("@%s, you are not an administrator of this group and cannot use bot commands.", userName)
+// 					_, err := bot.Send(c.Chat(), msg)
+// 					if err != nil {
+// 						log.Printf("Error sending non-admin message: %v", err)
+// 					}
+// 					return nil // Finishing the command
+// 				}
+// 			}
+
+// 			// If the check passes, call the following handler
+// 			return next(c)
+// 		}
+// 	}
+// }
+
+// AdminOnlyMiddleware проверяет роль пользователя
+// New version
 func AdminOnlyMiddleware(bot *telebot.Bot) telebot.MiddlewareFunc {
-	return func(next telebot.HandlerFunc) telebot.HandlerFunc {
-		return func(c telebot.Context) error {
-			// Checking whether the command is called in the group
-			if c.Chat().Type == telebot.ChatGroup || c.Chat().Type == telebot.ChatSuperGroup {
-				// Getting information about the user
-				userID := c.Sender().ID
-				chatID := c.Chat().ID
-				userName := c.Sender().Username
+    return func(next telebot.HandlerFunc) telebot.HandlerFunc {
+        return func(c telebot.Context) error {
+            // Игнорируем события, которые не связаны с текстовыми командами или сообщениями
+            if c.Message() == nil || c.Message().Text == "" {
+                return next(c)
+            }
 
-				// Checking if the user is an administrator
-				member, err := bot.ChatMemberOf(&telebot.Chat{ID: chatID}, &telebot.User{ID: userID})
-				if err != nil {
-					log.Printf("Error fetching user's role: %v", err)
-					return c.Reply("I couldn't verify your role. Please try again later.")
-				}
+            // Проверяем, что команда выполняется в группе
+            if c.Chat().Type == telebot.ChatGroup || c.Chat().Type == telebot.ChatSuperGroup {
+                userID := c.Sender().ID
+                chatID := c.Chat().ID
+                userName := c.Sender().Username
 
-				// Если пользователь не администратор
-				if member.Role != "administrator" && member.Role != "creator" {
-					msg := fmt.Sprintf("@%s, you are not an administrator of this group and cannot use bot commands.", userName)
-					_, err := bot.Send(c.Chat(), msg)
-					if err != nil {
-						log.Printf("Error sending non-admin message: %v", err)
-					}
-					return nil // Finishing the command
-				}
-			}
+                // Проверяем роль пользователя
+                member, err := bot.ChatMemberOf(&telebot.Chat{ID: chatID}, &telebot.User{ID: userID})
+                if err != nil {
+                    log.Printf("Error fetching user's role: %v", err)
+                    return c.Reply("I couldn't verify your role. Please try again later.")
+                }
 
-			// If the check passes, call the following handler
-			return next(c)
-		}
-	}
+                // Если пользователь не администратор
+                if member.Role != "administrator" && member.Role != "creator" {
+                    msg := fmt.Sprintf("@%s, you are not an administrator of this group and cannot use bot commands.", userName)
+                    _, err := bot.Send(c.Chat(), msg)
+                    if err != nil {
+                        log.Printf("Error sending non-admin message: %v", err)
+                    }
+                    return nil
+                }
+            }
+
+            // Пропускаем управление следующему обработчику
+            return next(c)
+        }
+    }
 }
