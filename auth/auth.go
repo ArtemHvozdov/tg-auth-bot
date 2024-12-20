@@ -42,16 +42,16 @@ var requestMap = make(map[string]AuthRequestData)
 
 // GenerateAuthRequest generates a new authentication request and returns it as a JSON object
 func GenerateAuthRequest(userID int64, params storage.VerificationParams) ([]byte, error) {
-	rURL := "https://1705-212-55-90-5.ngrok-free.app" // Updatesd with your actual URL
+	rURL := "https://ed4c-212-55-90-5.ngrok-free.app" // Updatesd with your actual URL
 	// sessionID := 1                                     // Use unique session IDs in production
-	sessionID := int(time.Now().UnixNano())
+	sessionID := strconv.Itoa(int(time.Now().UnixNano()))
 
 	log.Println("Session ID in Generate Auth Request:", sessionID)
 	CallbackURL := "/api/callback"
 	Audience := "did:polygonid:polygon:amoy:2qQ68JkRcf3xrHPQPWZei3YeVzHPP58wYNxx2mEouR"
 
 	// Forming a URI for callback
-	uri := fmt.Sprintf("%s%s?sessionId=%s", rURL, CallbackURL, strconv.Itoa(sessionID))
+	uri := fmt.Sprintf("%s%s?sessionId=%s", rURL, CallbackURL, sessionID)
 
 	log.Println("URI:", uri)
 
@@ -84,7 +84,7 @@ func GenerateAuthRequest(userID int64, params storage.VerificationParams) ([]byt
 	// Store auth request in map associated with session ID
 	// requestMap[strconv.Itoa(sessionID)] = request
 
-	requestMap[strconv.Itoa(sessionID)] = AuthRequestData{
+	requestMap[sessionID] = AuthRequestData{
         Request: request,
         UserID:  userID,
     }

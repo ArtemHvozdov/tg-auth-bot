@@ -10,6 +10,7 @@ type UserVerification struct {
 	IsPending bool
 	Verified  bool
 	SessionID int64
+	RestrictStatus bool
 }
 
 var (

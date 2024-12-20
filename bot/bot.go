@@ -1,5 +1,5 @@
 package bot
-
+ 
 import (
 	"fmt"
 	"log"
@@ -28,7 +28,7 @@ func StartBot(cfg config.Config) error {
 		return fmt.Errorf("error creating bot: %v", err)
 	}
 
-	Bot.Use(AdminOnlyMiddleware(Bot))
+	//Bot.Use(AdminOnlyMiddleware(Bot))
 
 	// Установка доступных команд
 	err = Bot.SetCommands([]telebot.Command{
@@ -51,7 +51,8 @@ func StartBot(cfg config.Config) error {
 	Bot.Handle("/setup", handlers.SetupHandler(Bot))
 	Bot.Handle("/verify", handlers.VerifyHandler(Bot))
 	Bot.Handle("/check_admin", handlers.CheckAdminHandler(Bot))
-	
+	//Bot.Handle(telebot.OnText ,handlers.MessageHandler(Bot))
+
 	// bot.Handle(telebot.OnText, handlers.TextMessageHandler(bot))
 
 	log.Println("Bot started...")
