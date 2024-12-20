@@ -94,3 +94,24 @@ type VerificationParams struct {
 
 // Struct paramets: ID Group - auth parametrs
 var VerificationParamsMap = make(map[int64]VerificationParams)
+
+// Admin User ID - Group ID
+var GroupSetupState = make(map[int64]int64)
+
+func AddAdminUser(userID, groupID int64) {
+	DataMutex.Lock()
+	defer DataMutex.Unlock()
+
+	GroupSetupState[userID] = groupID
+}
+
+func GetIdGroupFromGroupSetapState(userID int64) int64 {
+	DataMutex.Lock()
+	defer DataMutex.Unlock()
+
+	groupID, exists := GroupSetupState[userID]
+	if !exists {
+		return 0
+	}
+	return groupID
+}

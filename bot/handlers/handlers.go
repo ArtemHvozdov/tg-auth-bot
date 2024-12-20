@@ -57,10 +57,12 @@ func SetupHandler(bot *telebot.Bot) func(c telebot.Context) error {
 // /check_admin command - check administrator rights in a group and verify verification parameters
 func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 	return func(c telebot.Context) error {
-		chatID := c.Chat().ID
-		userID := c.Sender().ID
+		chatID := c.Chat().ID // ID group chat (future: need rename this variable to groupID)
+		userID := c.Sender().ID // ID admin user (future: need rename this variable to adminID)
 		chatName := c.Chat().Title // Getting the name of the chat (group)
 		userName := c.Sender().Username // Username
+
+		storage.AddAdminUser(userID, chatID)
 
 		log.Printf("User ID: %d, Chat ID: %d, Command received", userID, chatID)
 		log.Printf("User's name: %s %s (@%s)", c.Sender().FirstName, c.Sender().LastName, c.Sender().Username)
@@ -142,70 +144,70 @@ func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		)
 
 		// Set up handler for incoming private messages
-		bot.Handle(telebot.OnText, func(c telebot.Context) error {
+		// bot.Handle(telebot.OnText, func(c telebot.Context) error {
 
-			messageTypes := []string{
-				telebot.OnText,     // Текстовые сообщения
-				telebot.OnPhoto,    // Фотографии
-				telebot.OnVideo,    // Видео
-				telebot.OnSticker,  // Стикеры
-				telebot.OnDocument, // Документы
-				telebot.OnAudio,    // Аудиофайлы
-				telebot.OnVoice,    // Голосовые сообщения
-			}
+		// 	messageTypes := []string{
+		// 		telebot.OnText,     // Текстовые сообщения
+		// 		telebot.OnPhoto,    // Фотографии
+		// 		telebot.OnVideo,    // Видео
+		// 		telebot.OnSticker,  // Стикеры
+		// 		telebot.OnDocument, // Документы
+		// 		telebot.OnAudio,    // Аудиофайлы
+		// 		telebot.OnVoice,    // Голосовые сообщения
+		// 	}
 
 			
-			if c.Chat().Type != telebot.ChatPrivate {
-				for _, msgType := range messageTypes {
-					bot.Handle(msgType, func(c telebot.Context) error {
-						//chatID := c.Chat().ID
-						userID := c.Sender().ID
+		// 	if c.Chat().Type != telebot.ChatPrivate {
+		// 		for _, msgType := range messageTypes {
+		// 			bot.Handle(msgType, func(c telebot.Context) error {
+		// 				//chatID := c.Chat().ID
+		// 				userID := c.Sender().ID
 			
-						// // Проверяем, находится ли пользователь в ожидании верификации
-						userData, exists := storage.GetUser(userID)
-						if exists && userData.IsPending {
-							// Удаляем сообщение, если пользователь не верифицирован
-							if err := bot.Delete(c.Message()); err != nil {
-								log.Printf("Failed to delete message from @%s (ID: %d): %v", c.Sender().Username, userID, err)
-							} else {
-								log.Printf("Message from @%s (ID: %d) deleted (user awaiting verification).", c.Sender().Username, userID)
-							}
-						}
-						return nil
-					})
-				}
-			}
+		// 				// // Проверяем, находится ли пользователь в ожидании верификации
+		// 				userData, exists := storage.GetUser(userID)
+		// 				if exists && userData.IsPending {
+		// 					// Удаляем сообщение, если пользователь не верифицирован
+		// 					if err := bot.Delete(c.Message()); err != nil {
+		// 						log.Printf("Failed to delete message from @%s (ID: %d): %v", c.Sender().Username, userID, err)
+		// 					} else {
+		// 						log.Printf("Message from @%s (ID: %d) deleted (user awaiting verification).", c.Sender().Username, userID)
+		// 					}
+		// 				}
+		// 				return nil
+		// 			})
+		// 		}
+		// 	}
 
 
-			// Ensure the message is from a private chat and from the correct user
-			if c.Chat().Type != telebot.ChatPrivate || c.Sender().ID != userID {
-				return nil
-			}
+		// 	// Ensure the message is from a private chat and from the correct user
+		// 	if c.Chat().Type != telebot.ChatPrivate || c.Sender().ID != userID {
+		// 		return nil
+		// 	}
 
-			var params storage.VerificationParams
+		// 	var params storage.VerificationParams
 
-			// Parse JSON from the admin's message
-			if err := json.Unmarshal([]byte(c.Text()), &params); err != nil {
-				log.Printf("Failed to parse JSON: %v", err)
-				bot.Send(c.Sender(), "Invalid JSON format. Please ensure your parameters match the expected structure.")
-				return nil
-			}
+		// 	// Parse JSON from the admin's message
+		// 	if err := json.Unmarshal([]byte(c.Text()), &params); err != nil {
+		// 		log.Printf("Failed to parse JSON: %v", err)
+		// 		bot.Send(c.Sender(), "Invalid JSON format. Please ensure your parameters match the expected structure.")
+		// 		return nil
+		// 	}
 
-			// Validate required fields in parsed JSON
-			if params.CircuitID == "" || params.ID == 0 || params.Query == nil {
-				log.Println("JSON does not contain all required fields.")
-				bot.Send(c.Sender(), "Missing required fields in JSON. Please include 'circuitId', 'id', and 'query'.")
-				return nil
-			}
+			// // Validate required fields in parsed JSON
+			// if params.CircuitID == "" || params.ID == 0 || params.Query == nil {
+			// 	log.Println("JSON does not contain all required fields.")
+			// 	bot.Send(c.Sender(), "Missing required fields in JSON. Please include 'circuitId', 'id', and 'query'.")
+			// 	return nil
+			// }
 
-			// Save parameters to storage
-			storage.VerificationParamsMap[chatID] = params
-			log.Printf("Verification parameters set for group '%s': %+v", chatName, params)
+		// 	// Save parameters to storage
+		// 	storage.VerificationParamsMap[chatID] = params
+		// 	log.Printf("Verification parameters set for group '%s': %+v", chatName, params)
 
-			// Notify admin about successful setup
-			bot.Send(c.Sender(), fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", chatName))
-			return nil
-		})
+		// 	// Notify admin about successful setup
+		// 	bot.Send(c.Sender(), fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", chatName))
+		// 	return nil
+		// })
 
 		return nil
 	}
@@ -383,4 +385,71 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 			}
 		}
 	}()
+}
+
+func UnifiedHandler(bot *telebot.Bot) func(c telebot.Context) error {
+    return func(c telebot.Context) error {
+        userID := c.Sender().ID
+        chatType := c.Chat().Type
+
+        switch chatType {
+        case telebot.ChatGroup, telebot.ChatSuperGroup:
+            return handleGroupMessage(bot, c, userID)
+
+        case telebot.ChatPrivate:
+            return handlePrivateMessage(bot, c)
+
+        default:
+            log.Printf("Unhandled chat type: %s", chatType)
+            return nil
+        }
+    }
+}
+
+func handleGroupMessage(bot *telebot.Bot, c telebot.Context, userID int64) error {
+    userData, exists := storage.GetUser(userID)
+    if !exists || userData.IsPending {
+        // Удаляем сообщение пользователя
+        if err := bot.Delete(c.Message()); err != nil {
+            log.Printf("Failed to delete message from @%s (ID: %d): %v", c.Sender().Username, userID, err)
+        } else {
+            log.Printf("Message from @%s (ID: %d) deleted (user awaiting verification).", c.Sender().Username, userID)
+        }
+    }
+    return nil
+}
+
+func handlePrivateMessage(bot *telebot.Bot, c telebot.Context) error {
+	//chatID := c.Chat().ID
+	//chatName := c.Chat().Title // Getting the name of the chat (group)
+
+	userID := c.Sender().ID
+	groupChatID := storage.GroupSetupState[userID]
+	groupChat, _ := bot.ChatByID(groupChatID)
+	groupChatName := groupChat.Title
+
+    var params storage.VerificationParams
+
+    // Parse JSON from the admin's message
+	if err := json.Unmarshal([]byte(c.Text()), &params); err != nil {
+		log.Printf("Failed to parse JSON: %v", err)
+		bot.Send(c.Sender(), "Invalid JSON format. Please ensure your parameters match the expected structure.")
+		return nil
+	}
+
+    // Validate required fields in parsed JSON
+	if params.CircuitID == "" || params.ID == 0 || params.Query == nil {
+		log.Println("JSON does not contain all required fields.")
+		bot.Send(c.Sender(), "Missing required fields in JSON. Please include 'circuitId', 'id', and 'query'.")
+		return nil
+			}
+
+    // Save parameters to storage
+	storage.VerificationParamsMap[groupChatID] = params
+	log.Printf("Verification parameters set for group '%s': %+v", groupChatName, params)
+
+	// Notify admin about successful setup
+	bot.Send(c.Sender(), fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", groupChatName))
+	return nil
+		
 }

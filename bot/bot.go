@@ -23,7 +23,7 @@ func StartBot(cfg config.Config) error {
 		Poller: &telebot.LongPoller{Timeout: 10 * time.Second},
 	}
 
-	Bot, err := telebot.NewBot(pref)
+	bot, err := telebot.NewBot(pref)
 	if err != nil {
 		return fmt.Errorf("error creating bot: %v", err)
 	}
@@ -31,7 +31,7 @@ func StartBot(cfg config.Config) error {
 	//Bot.Use(AdminOnlyMiddleware(Bot))
 
 	// Установка доступных команд
-	err = Bot.SetCommands([]telebot.Command{
+	err = bot.SetCommands([]telebot.Command{
 		{Text: "start", Description: "Launch bot"},
 		{Text: "verify", Description: "Go through verification"},
 		{Text: "setup", Description: "Configure verification settings"},
@@ -41,26 +41,41 @@ func StartBot(cfg config.Config) error {
 		log.Printf("Failed to set bot commands: %v", err)
 	}
 
-	InstanceBot = Bot
+	//InstanceBot = Bot
 
-	handlers.ListenForStorageChanges(Bot)
+	handlers.ListenForStorageChanges(bot)
 
 	// Handlers
-	Bot.Handle(telebot.OnUserJoined, handlers.NewUserJoinedHandler(Bot))
-	Bot.Handle("/start", handlers.StartHandler(Bot))
-	Bot.Handle("/setup", handlers.SetupHandler(Bot))
-	Bot.Handle("/verify", handlers.VerifyHandler(Bot))
-	Bot.Handle("/check_admin", handlers.CheckAdminHandler(Bot))
+	bot.Handle(telebot.OnUserJoined, handlers.NewUserJoinedHandler(bot))
+	bot.Handle("/start", handlers.StartHandler(bot))
+	bot.Handle("/setup", handlers.SetupHandler(bot))
+	bot.Handle("/verify", handlers.VerifyHandler(bot))
+	bot.Handle("/check_admin", handlers.CheckAdminHandler(bot))
 	//Bot.Handle(telebot.OnText ,handlers.MessageHandler(Bot))
 
 	// bot.Handle(telebot.OnText, handlers.TextMessageHandler(bot))
+	messageTypes := []string{
+		telebot.OnText,
+		telebot.OnPhoto,
+		telebot.OnAudio,
+		telebot.OnDocument,
+		telebot.OnSticker,
+		telebot.OnVideo,
+		telebot.OnVoice,
+	}
+
+	for _, messageType := range messageTypes {
+		bot.Handle(messageType, handlers.UnifiedHandler(bot))
+	}
 
 	log.Println("Bot started...")
-	Bot.Start()
+	bot.Start()
 
 	log.Println("Default user storage:", storage.UserStore)
 	return nil
 }
+
+
 
 
 // AdminOnlyMiddleware проверяет роль пользователя
