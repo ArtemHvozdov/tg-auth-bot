@@ -127,90 +127,83 @@ func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 			return err
 		}
 
+		// Save parameters for restriction
+
+		// Create buttons ''Blocl'' and ''Delete''
+		btnBlock := telebot.InlineButton{
+			Text: "Block",
+			Unique: "block",
+		}
+		btnDelete := telebot.InlineButton{
+			Text: "Delete",
+			Unique: "delete",
+		}
+		// Create a keyboard with buttons
+		inlineKeys := [][]telebot.InlineButton{{btnBlock, btnDelete}}
+		keyboard := &telebot.ReplyMarkup{InlineKeyboard: inlineKeys}
+
+		
+		if _, err := bot.Send(&telebot.User{ID: userID}, "Select restriction type:", keyboard); err != nil {
+			log.Printf("Error sending keyboard: %v", err)
+			return err
+		}
+
+		bot.Handle(&btnBlock, func(c telebot.Context) error {
+			storage.AddRestrictionType(chatID, "block")
+			bot.Send(&telebot.User{ID: userID}, "Restriction type set to 'block'.")
+
+			log.Println(storage.RestrictionType[chatID])
+
+			// Ask for verification parameters
+			askVerificationParams(bot, userID)
+			return nil
+		})
+
+		bot.Handle(&btnDelete, func(c telebot.Context) error {
+			storage.AddRestrictionType(chatID, "delete")
+			bot.Send(&telebot.User{ID: userID}, "Restriction type set to 'delete'.")
+
+			// Ask for verification parameters
+			askVerificationParams(bot, userID)
+			return nil
+		})
+
 		// Notify admin to send verification parameters in a private chatRestrictStatus
-		bot.Send(&telebot.User{ID: userID}, "Send verification parameters in JSON format in this private chat. Example:\n\n"+
-			"{\n"+
-			"  \"circuitId\": \"AtomicQuerySigV2CircuitID\",\n"+
-			"  \"id\": 1,\n"+
-			"  \"query\": {\n"+
-			"    \"allowedIssuers\": [\"*\"],\n"+
-			"    \"context\": \"https://example.com/context\",\n"+
-			"    \"type\": \"ExampleType\",\n"+
-			"    \"credentialSubject\": {\n"+
-			"      \"birthday\": {\"$lt\": 20000101}\n"+
-			"    }\n"+
-			"  }\n"+
-			"}",
-		)
-
-		// Set up handler for incoming private messages
-		// bot.Handle(telebot.OnText, func(c telebot.Context) error {
-
-		// 	messageTypes := []string{
-		// 		telebot.OnText,     // Текстовые сообщения
-		// 		telebot.OnPhoto,    // Фотографии
-		// 		telebot.OnVideo,    // Видео
-		// 		telebot.OnSticker,  // Стикеры
-		// 		telebot.OnDocument, // Документы
-		// 		telebot.OnAudio,    // Аудиофайлы
-		// 		telebot.OnVoice,    // Голосовые сообщения
-		// 	}
-
-			
-		// 	if c.Chat().Type != telebot.ChatPrivate {
-		// 		for _, msgType := range messageTypes {
-		// 			bot.Handle(msgType, func(c telebot.Context) error {
-		// 				//chatID := c.Chat().ID
-		// 				userID := c.Sender().ID
-			
-		// 				// // Проверяем, находится ли пользователь в ожидании верификации
-		// 				userData, exists := storage.GetUser(userID)
-		// 				if exists && userData.IsPending {
-		// 					// Удаляем сообщение, если пользователь не верифицирован
-		// 					if err := bot.Delete(c.Message()); err != nil {
-		// 						log.Printf("Failed to delete message from @%s (ID: %d): %v", c.Sender().Username, userID, err)
-		// 					} else {
-		// 						log.Printf("Message from @%s (ID: %d) deleted (user awaiting verification).", c.Sender().Username, userID)
-		// 					}
-		// 				}
-		// 				return nil
-		// 			})
-		// 		}
-		// 	}
-
-
-		// 	// Ensure the message is from a private chat and from the correct user
-		// 	if c.Chat().Type != telebot.ChatPrivate || c.Sender().ID != userID {
-		// 		return nil
-		// 	}
-
-		// 	var params storage.VerificationParams
-
-		// 	// Parse JSON from the admin's message
-		// 	if err := json.Unmarshal([]byte(c.Text()), &params); err != nil {
-		// 		log.Printf("Failed to parse JSON: %v", err)
-		// 		bot.Send(c.Sender(), "Invalid JSON format. Please ensure your parameters match the expected structure.")
-		// 		return nil
-		// 	}
-
-			// // Validate required fields in parsed JSON
-			// if params.CircuitID == "" || params.ID == 0 || params.Query == nil {
-			// 	log.Println("JSON does not contain all required fields.")
-			// 	bot.Send(c.Sender(), "Missing required fields in JSON. Please include 'circuitId', 'id', and 'query'.")
-			// 	return nil
-			// }
-
-		// 	// Save parameters to storage
-		// 	storage.VerificationParamsMap[chatID] = params
-		// 	log.Printf("Verification parameters set for group '%s': %+v", chatName, params)
-
-		// 	// Notify admin about successful setup
-		// 	bot.Send(c.Sender(), fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", chatName))
-		// 	return nil
-		// })
+		// bot.Send(&telebot.User{ID: userID}, "Send verification parameters in JSON format in this private chat. Example:\n\n"+
+		// 	"{\n"+
+		// 	"  \"circuitId\": \"AtomicQuerySigV2CircuitID\",\n"+
+		// 	"  \"id\": 1,\n"+
+		// 	"  \"query\": {\n"+
+		// 	"    \"allowedIssuers\": [\"*\"],\n"+
+		// 	"    \"context\": \"https://example.com/context\",\n"+
+		// 	"    \"type\": \"ExampleType\",\n"+
+		// 	"    \"credentialSubject\": {\n"+
+		// 	"      \"birthday\": {\"$lt\": 20000101}\n"+
+		// 	"    }\n"+
+		// 	"  }\n"+
+		// 	"}",
+		// )
 
 		return nil
 	}
+}
+
+// askVerificationParams sends a request for verification parameters to the admin
+func askVerificationParams(bot *telebot.Bot, userID int64) {
+	bot.Send(&telebot.User{ID: userID}, "Send verification parameters in JSON format in this private chat. Example:\n\n"+
+		"{\n"+
+		"  \"circuitId\": \"AtomicQuerySigV2CircuitID\",\n"+
+		"  \"id\": 1,\n"+
+		"  \"query\": {\n"+
+		"    \"allowedIssuers\": [\"*\"],\n"+
+		"    \"context\": \"https://example.com/context\",\n"+
+		"    \"type\": \"ExampleType\",\n"+
+		"    \"credentialSubject\": {\n"+
+		"      \"birthday\": {\"$lt\": 20000101}\n"+
+		"    }\n"+
+		"  }\n"+
+		"}",
+	)
 }
 
 
@@ -224,7 +217,7 @@ func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 			}
 
 			// Ограничиваем права нового участника
-			// // restrictedUntil := time.Now().Add(10 * time.Minute).Unix() // Ограничения на 10 минут
+			// restrictedUntil := time.Now().Add(10 * time.Minute).Unix() // Ограничения на 10 минут
 			// err := bot.Restrict(c.Chat(), &telebot.ChatMember{
 			// 	User: &telebot.User{ID: member.ID},
 			// 	Rights: telebot.Rights{
@@ -253,7 +246,19 @@ func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 			log.Println("New user:", newUser)
 
-			// storage.AddOrUpdateUser(member.ID, newUser)
+			if storage.RestrictionType[c.Chat().ID] == "block" {
+				err := bot.Restrict(c.Chat(), &telebot.ChatMember{
+					User: &telebot.User{ID: member.ID},
+					Rights: telebot.Rights{
+						CanSendMessages: false, // Полный запрет на отправку сообщений
+					},
+					//UntilDate: restrictedUntil, // Опционально: ограничение по времени
+				})
+				if err != nil {
+					log.Printf("Failed to restrict user @%s (ID: %d): %s", member.Username, member.ID, err)
+					continue
+				}
+			}
 
 			log.Println("Bot Logs: new member -", newUser)
 
@@ -354,10 +359,28 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 				if data.Verified {
 					// Successful verification
 					log.Printf("User @%s (ID: %d) passed verification.", data.Username, userID)
+
+					groupChatID := storage.UserStore[userID].GroupID
+					typeRestriction := storage.RestrictionType[groupChatID]
 					
 					// New logic code
 
 					// chat := &telebot.Chat{ID: storage.UserStore[userID].GroupID}
+
+					if typeRestriction == "block" {
+						// Restrict the user
+						err := bot.Restrict(&telebot.Chat{ID: groupChatID}, &telebot.ChatMember{
+							User: &telebot.User{ID: userID},
+							Rights: telebot.Rights{
+								CanSendMessages: true, // Полный запрет на отправку сообщений
+							},
+							//UntilDate: restrictedUntil, // Опционально: ограничение по времени
+						})
+						if err != nil {
+							log.Printf("Failed to restrict user @%s (ID: %d): %s", storage.UserStore[userID].Username, userID, err)
+							continue
+						}
+					}
 
 					// err := bot.Restrict(chat, &telebot.ChatMember{
 					// 	User: &telebot.User{ID: userID},
@@ -407,22 +430,35 @@ func UnifiedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 }
 
 func handleGroupMessage(bot *telebot.Bot, c telebot.Context, userID int64) error {
-    userData, exists := storage.GetUser(userID)
-    if !exists || userData.IsPending {
-        // Удаляем сообщение пользователя
-        if err := bot.Delete(c.Message()); err != nil {
-            log.Printf("Failed to delete message from @%s (ID: %d): %v", c.Sender().Username, userID, err)
-        } else {
-            log.Printf("Message from @%s (ID: %d) deleted (user awaiting verification).", c.Sender().Username, userID)
-        }
-    }
+	chatGroupId := c.Chat().ID
+	typeRestriction := storage.RestrictionType[chatGroupId]
+
+	if typeRestriction == "delete" {
+		userData, exists := storage.GetUser(userID)
+		if !exists || userData.IsPending {
+			// Удаляем сообщение пользователя
+			if err := bot.Delete(c.Message()); err != nil {
+				log.Printf("Failed to delete message from @%s (ID: %d): %v", c.Sender().Username, userID, err)
+			} else {
+				log.Printf("Message from @%s (ID: %d) deleted (user awaiting verification).", c.Sender().Username, userID)
+			}
+		}
+		return nil
+	}
+
+    // userData, exists := storage.GetUser(userID)
+    // if !exists || userData.IsPending {
+    //     // Удаляем сообщение пользователя
+    //     if err := bot.Delete(c.Message()); err != nil {
+    //         log.Printf("Failed to delete message from @%s (ID: %d): %v", c.Sender().Username, userID, err)
+    //     } else {
+    //         log.Printf("Message from @%s (ID: %d) deleted (user awaiting verification).", c.Sender().Username, userID)
+    //     }
+    // }
     return nil
 }
 
 func handlePrivateMessage(bot *telebot.Bot, c telebot.Context) error {
-	//chatID := c.Chat().ID
-	//chatName := c.Chat().Title // Getting the name of the chat (group)
-
 	userID := c.Sender().ID
 	groupChatID := storage.GroupSetupState[userID]
 	groupChat, _ := bot.ChatByID(groupChatID)

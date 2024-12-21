@@ -7,7 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
+	//"strconv"
 	"time"
 
 	"github.com/ArtemHvozdov/tg-auth-bot/storage"
@@ -43,8 +43,8 @@ var requestMap = make(map[string]AuthRequestData)
 // GenerateAuthRequest generates a new authentication request and returns it as a JSON object
 func GenerateAuthRequest(userID int64, params storage.VerificationParams) ([]byte, error) {
 	rURL := "https://ed4c-212-55-90-5.ngrok-free.app" // Updatesd with your actual URL
-	// sessionID := 1                                     // Use unique session IDs in production
-	sessionID := strconv.Itoa(int(time.Now().UnixNano()))
+	sessionID := "1"                                     // Use unique session IDs in production
+	//sessionID := strconv.Itoa(int(time.Now().UnixNano()))
 
 	log.Println("Session ID in Generate Auth Request:", sessionID)
 	CallbackURL := "/api/callback"

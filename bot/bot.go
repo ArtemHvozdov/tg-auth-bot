@@ -51,9 +51,7 @@ func StartBot(cfg config.Config) error {
 	bot.Handle("/setup", handlers.SetupHandler(bot))
 	bot.Handle("/verify", handlers.VerifyHandler(bot))
 	bot.Handle("/check_admin", handlers.CheckAdminHandler(bot))
-	//Bot.Handle(telebot.OnText ,handlers.MessageHandler(Bot))
-
-	// bot.Handle(telebot.OnText, handlers.TextMessageHandler(bot))
+	
 	messageTypes := []string{
 		telebot.OnText,
 		telebot.OnPhoto,
