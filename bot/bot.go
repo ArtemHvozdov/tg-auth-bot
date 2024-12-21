@@ -1,5 +1,5 @@
 package bot
-
+ 
 import (
 	"fmt"
 	"log"
@@ -23,15 +23,15 @@ func StartBot(cfg config.Config) error {
 		Poller: &telebot.LongPoller{Timeout: 10 * time.Second},
 	}
 
-	Bot, err := telebot.NewBot(pref)
+	bot, err := telebot.NewBot(pref)
 	if err != nil {
 		return fmt.Errorf("error creating bot: %v", err)
 	}
 
-	Bot.Use(AdminOnlyMiddleware(Bot))
+	bot.Use(AdminOnlyMiddleware(bot))
 
-	// Установка доступных команд
-	err = Bot.SetCommands([]telebot.Command{
+	// Setting up commands
+	err = bot.SetCommands([]telebot.Command{
 		{Text: "start", Description: "Launch bot"},
 		{Text: "verify", Description: "Go through verification"},
 		{Text: "setup", Description: "Configure verification settings"},
@@ -41,58 +41,73 @@ func StartBot(cfg config.Config) error {
 		log.Printf("Failed to set bot commands: %v", err)
 	}
 
-	InstanceBot = Bot
-
-	handlers.ListenForStorageChanges(Bot)
+	handlers.ListenForStorageChanges(bot)
 
 	// Handlers
-	Bot.Handle(telebot.OnUserJoined, handlers.NewUserJoinedHandler(Bot))
-	Bot.Handle("/start", handlers.StartHandler(Bot))
-	Bot.Handle("/setup", handlers.SetupHandler(Bot))
-	Bot.Handle("/verify", handlers.VerifyHandler(Bot))
-	Bot.Handle("/check_admin", handlers.CheckAdminHandler(Bot))
+	bot.Handle(telebot.OnUserJoined, handlers.NewUserJoinedHandler(bot))
+	bot.Handle("/start", handlers.StartHandler(bot))
+	bot.Handle("/setup", handlers.SetupHandler(bot))
+	bot.Handle("/verify", handlers.VerifyHandler(bot))
+	bot.Handle("/check_admin", handlers.CheckAdminHandler(bot))
 	
-	// bot.Handle(telebot.OnText, handlers.TextMessageHandler(bot))
+	messageTypes := []string{
+		telebot.OnText,
+		telebot.OnPhoto,
+		telebot.OnAudio,
+		telebot.OnDocument,
+		telebot.OnSticker,
+		telebot.OnVideo,
+		telebot.OnVoice,
+	}
+
+	for _, messageType := range messageTypes {
+		bot.Handle(messageType, handlers.UnifiedHandler(bot))
+	}
 
 	log.Println("Bot started...")
-	Bot.Start()
+	bot.Start()
 
 	log.Println("Default user storage:", storage.UserStore)
 	return nil
 }
 
-
-// AdminOnlyMiddleware проверяет роль пользователя
+// AdminOnlyMiddleware checks the user's role and allows access only to administrators
 func AdminOnlyMiddleware(bot *telebot.Bot) telebot.MiddlewareFunc {
-	return func(next telebot.HandlerFunc) telebot.HandlerFunc {
-		return func(c telebot.Context) error {
-			// Checking whether the command is called in the group
-			if c.Chat().Type == telebot.ChatGroup || c.Chat().Type == telebot.ChatSuperGroup {
-				// Getting information about the user
-				userID := c.Sender().ID
-				chatID := c.Chat().ID
-				userName := c.Sender().Username
+    return func(next telebot.HandlerFunc) telebot.HandlerFunc {
+        return func(c telebot.Context) error {
+            // Ignore events that are not associated with text commands
+            if c.Message() == nil || c.Message().Text == "" || c.Message().Text[0] != '/' {
+                return next(c)
+            }
 
-				// Checking if the user is an administrator
-				member, err := bot.ChatMemberOf(&telebot.Chat{ID: chatID}, &telebot.User{ID: userID})
-				if err != nil {
-					log.Printf("Error fetching user's role: %v", err)
-					return c.Reply("I couldn't verify your role. Please try again later.")
-				}
+            // Checking that the command is executed in the group
+            if c.Chat().Type == telebot.ChatGroup || c.Chat().Type == telebot.ChatSuperGroup {
+                userID := c.Sender().ID
+                chatID := c.Chat().ID
 
-				// Если пользователь не администратор
-				if member.Role != "administrator" && member.Role != "creator" {
-					msg := fmt.Sprintf("@%s, you are not an administrator of this group and cannot use bot commands.", userName)
-					_, err := bot.Send(c.Chat(), msg)
-					if err != nil {
-						log.Printf("Error sending non-admin message: %v", err)
-					}
-					return nil // Finishing the command
-				}
-			}
+                // Checking the user role
+                member, err := bot.ChatMemberOf(&telebot.Chat{ID: chatID}, &telebot.User{ID: userID})
+                if err != nil {
+                    log.Printf("Error fetching user's role: %v", err)
+                    return nil // Ignore the error and do not execute the command
+                }
 
-			// If the check passes, call the following handler
-			return next(c)
-		}
-	}
+                // If the user is not an administrator
+                if member.Role != "administrator" && member.Role != "creator" {
+                    // Delete the user's message with the command after 1 second
+                    time.AfterFunc(1*time.Second, func() {
+                        err := bot.Delete(c.Message())
+                        if err != nil {
+                            log.Printf("Error deleting message: %v", err)
+                        }
+                    })
+                    return nil // Ignore the command
+                }
+            }
+
+            // Pass control to the next handler
+            return next(c)
+        }
+    }
 }
+

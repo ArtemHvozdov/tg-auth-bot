@@ -10,6 +10,7 @@ type UserVerification struct {
 	IsPending bool
 	Verified  bool
 	SessionID int64
+	RestrictStatus bool
 }
 
 var (
@@ -93,3 +94,46 @@ type VerificationParams struct {
 
 // Struct paramets: ID Group - auth parametrs
 var VerificationParamsMap = make(map[int64]VerificationParams)
+
+// Admin User ID - Group ID
+var GroupSetupState = make(map[int64]int64)
+
+func AddAdminUser(userID, groupID int64) {
+	DataMutex.Lock()
+	defer DataMutex.Unlock()
+
+	GroupSetupState[userID] = groupID
+}
+
+func GetIdGroupFromGroupSetapState(userID int64) int64 {
+	DataMutex.Lock()
+	defer DataMutex.Unlock()
+
+	groupID, exists := GroupSetupState[userID]
+	if !exists {
+		return 0
+	}
+	return groupID
+}
+
+// RestrictionType - type of restriction
+// ID Chat Group -> Restriction Type ( block | delete )
+var RestrictionType = make(map[int64]string)
+
+func AddRestrictionType(groupID int64, restrictionType string) {
+	DataMutex.Lock()
+	defer DataMutex.Unlock()
+
+	RestrictionType[groupID] = restrictionType
+}
+
+func GetRestrictionType(groupID int64) string {
+	DataMutex.Lock()
+	defer DataMutex.Unlock()
+
+	restrictionType, exists := RestrictionType[groupID]
+	if !exists {
+		return ""
+	}
+	return restrictionType
+}
