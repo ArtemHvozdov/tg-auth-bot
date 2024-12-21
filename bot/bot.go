@@ -30,7 +30,7 @@ func StartBot(cfg config.Config) error {
 
 	//Bot.Use(AdminOnlyMiddleware(Bot))
 
-	// Установка доступных команд
+	// Setting up commands
 	err = bot.SetCommands([]telebot.Command{
 		{Text: "start", Description: "Launch bot"},
 		{Text: "verify", Description: "Go through verification"},
@@ -146,7 +146,7 @@ func AdminOnlyMiddleware(bot *telebot.Bot) telebot.MiddlewareFunc {
                 }
             }
 
-            // Пропускаем управление следующему обработчику
+			// Pass control to the next handler
             return next(c)
         }
     }
