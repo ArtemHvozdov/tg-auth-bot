@@ -42,7 +42,7 @@ var requestMap = make(map[string]AuthRequestData)
 
 // GenerateAuthRequest generates a new authentication request and returns it as a JSON object
 func GenerateAuthRequest(userID int64, params storage.VerificationParams) ([]byte, error) {
-	rURL := "https://d88f-109-72-122-36.ngrok-free.app" // Updatesd with your actual URL
+	rURL := "https://12f8-109-72-122-36.ngrok-free.app" // Updatesd with your actual URL
 	sessionID := "1"                                     // Use unique session IDs in production
 	//sessionID := strconv.Itoa(int(time.Now().UnixNano()))
 
@@ -102,7 +102,7 @@ func GenerateAuthRequest(userID int64, params storage.VerificationParams) ([]byt
 
 
 // Callback handles the callback from iden3
-func Callback(w http.ResponseWriter, r *http.Request) {
+func Callback(w http.ResponseWriter, r *http.Request) bool {
 	log.Println("Callback received")
 	sessionID := r.URL.Query().Get("sessionId")
 
@@ -112,7 +112,7 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Error reading token from request body:", err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
-		return
+		return false
 	}
 
 	ethURL := "https://polygon-amoy.infura.io/v3/a1e81bcaca104bf9ad54f4e88b4c3554"
@@ -128,7 +128,7 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		log.Println("Session ID not found")
 		http.Error(w, "Session not found", http.StatusNotFound)
-		return
+		return false
 	}
 
 	userID := authRequest.UserID
@@ -153,7 +153,7 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Error creating verifier:", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
+		return false
 	}
 
 	// Performing verification
@@ -177,7 +177,7 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 		}
 
 		http.Error(w, "Verification failed", http.StatusForbidden)
-		return
+		return false
 	}
 
 	// Update the user status if verification is successful
@@ -191,21 +191,28 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Response to request with verification result
-	responseBytes, err := json.Marshal(authResponse)
+	resposeBytes, err := json.Marshal(authResponse)
 	if err != nil {
 		log.Println("Error serializing auth response:", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
+		return false
 	}
 
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(responseBytes)
+	if resposeBytes == nil {
+		log.Println("Response is empty")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	} else {
+		log.Println("Response is here")
+	}
+
+	// w.WriteHeader(http.StatusOK)
+	// w.Header().Set("Content-Type", "application/json")
+	// w.Write(responseBytes)
 	log.Println("Verification passed")
 
 	// Logging user information
 	log.Println("Information of new member:", userData)
-
+	return true
 }
 
 

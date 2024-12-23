@@ -225,6 +225,7 @@ func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 					},
 				})
 				if err != nil {
+					log.Println("Nes user handler")
 					log.Printf("Failed to restrict user @%s (ID: %d): %s", member.Username, member.ID, err)
 					continue
 				}
@@ -326,16 +327,18 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 				continue
 			}
 
+			groupChatID := storage.UserStore[userID].GroupID
+			typeRestriction := storage.RestrictionType[groupChatID]
+
+			userIsAdminGroup := checkUserAsAdminInGroup(userID, groupChatID)
+
 			if !data.IsPending {
 				if data.Verified {
 					// Successful verification
 					log.Printf("User @%s (ID: %d) passed verification.", data.Username, userID)
-
-					groupChatID := storage.UserStore[userID].GroupID
-					typeRestriction := storage.RestrictionType[groupChatID]
 					
 					// Restrict the user
-					if typeRestriction == "block" {
+					if typeRestriction == "block" && !userIsAdminGroup {
 						err := bot.Restrict(&telebot.Chat{ID: groupChatID}, &telebot.ChatMember{
 							User: &telebot.User{ID: userID},
 							Rights: telebot.Rights{
@@ -345,12 +348,20 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 							},
 						})
 						if err != nil {
+							log.Println("Listen for storage changes handler")
 							log.Printf("Failed to restrict user @%s (ID: %d): %s", storage.UserStore[userID].Username, userID, err)
 							continue
 						}
 					}
+					 
+					if !userIsAdminGroup {
+						bot.Send(&telebot.User{ID: userID}, "You have successfully passed verification and can stay in the group.")
+					}
 
-					bot.Send(&telebot.User{ID: userID}, "You have successfully passed verification and can stay in the group.")
+					if userIsAdminGroup {
+						bot.Send(&telebot.User{ID: userID}, "The test was successful. The parameters are configured correctly, the verification process is working.")
+						storage.DeleteUser(userID)
+					}
 				} else {
 					// Verification failed
 					log.Printf("User @%s (ID: %d) failed verification. Removing from group.", data.Username, userID)
@@ -435,4 +446,92 @@ func handlePrivateMessage(bot *telebot.Bot, c telebot.Context) error {
 	bot.Send(c.Sender(), fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", groupChatName))
 	return nil
 		
+}
+
+// Handler for /test_verification
+func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
+	return func(c telebot.Context) error {
+		userID := c.Sender().ID
+		var groupChatID int64
+
+		// Определяем, где был вызван хендлер: в группе или в личном чате
+		if c.Chat().Type == telebot.ChatPrivate {
+			// Проверяем, есть ли сохраненная группа для этого администратора
+			if groupID, exists := storage.GroupSetupState[userID]; exists {
+				groupChatID = groupID
+			} else {
+				return c.Send("You need to specify a group for verification setup.")
+			}
+		} else {
+			groupChatID = c.Chat().ID
+		}
+
+		log.Println("Group Chat ID:", groupChatID)
+
+		// Проверяем, является ли пользователь администратором группы
+		if !isAdmin(bot, groupChatID, userID) {
+			return c.Send("You are not an administrator in this group.")
+		}
+
+		// Создаем запись для тестовой верификации администратора
+		adminUser := &storage.UserVerification{
+			UserID:         userID,
+			Username:       c.Sender().Username,
+			GroupID:        groupChatID,
+			GroupName:      c.Chat().Title,
+			IsPending:      true,
+			Verified:       false,
+			SessionID:      0,
+			RestrictStatus: false,
+		}
+
+		storage.AddOrUpdateUser(userID, adminUser)
+
+		// Check if verification parameters are set for the group
+		params, exists := storage.VerificationParamsMap[groupChatID]
+		if !exists {
+			//storage.RemoveUser(userID) // Удаляем тестовую запись, если параметры не настроены
+			return c.Send("Verification parameters have not been set for this group.")
+		}
+
+		// Generate a test request for verification
+		jsonData, err := auth.GenerateAuthRequest(userID, params)
+		if err != nil {
+			log.Printf("Error generating auth request: %v", err)
+			return c.Send("Failed to generate verification request. Please try again later.")
+		}
+
+		base64Data := base64.StdEncoding.EncodeToString(jsonData)
+		deepLink := fmt.Sprintf("https://wallet.privado.id/#i_m=%s", base64Data)
+
+		btn := telebot.InlineButton{
+			Text: "Test verify",
+			URL:  deepLink,
+		}
+
+		// Creating markup with a button
+		inlineKeyboard := &telebot.ReplyMarkup{}
+		inlineKeyboard.InlineKeyboard = [][]telebot.InlineButton{{btn}}
+
+		// Send a message with a link for test verification
+		_, err = bot.Send(c.Sender(), "Please test verify your age by clicking the link below:", inlineKeyboard)
+		if err != nil {
+			log.Printf("Error sending verification message: %v", err)
+			return c.Send("Failed to send verification link. Please check your private messages.")
+		}
+
+		if c.Chat().Type == telebot.ChatSuperGroup || c.Chat().Type == telebot.ChatGroup {
+			return c.Send("A verification link has been sent to your private messages. Please check your inbox.")
+		}
+
+		return nil
+	}
+}
+
+func checkUserAsAdminInGroup(userID, groupID int64) bool {
+	if storage.GroupSetupState[userID] == groupID {
+		return true
+	} else {
+		return false
+	}
 }
