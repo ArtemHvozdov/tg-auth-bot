@@ -240,10 +240,18 @@ func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 			inlineKeys := [][]telebot.InlineButton{{btn}}
 			log.Printf("New member @%s added to verification queue.", member.Username)
-			c.Send(
+
+			msg, err := bot.Send(
+				c.Chat(),
 				fmt.Sprintf("Hi, @%s! Please verify your age by clicking the button below.", member.Username),
 				&telebot.ReplyMarkup{InlineKeyboard: inlineKeys},
 			)
+			if err != nil {
+				log.Printf("Error sending verification message: %v", err)
+				return err
+			}
+			// Save the message ID for further deletion
+			storage.UserStore[member.ID].AddVerificationMsg(msg.ID, msg)
 
 			go handleVerificationTimeout(bot, member.ID, c.Chat().ID)
 		}
@@ -356,6 +364,10 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 					 
 					if !userIsAdminGroup {
 						bot.Send(&telebot.User{ID: userID}, "You have successfully passed verification and can stay in the group.")
+
+						// Delete the verification message
+						storage.UserStore[userID].DeleteVerifyMessage(bot)
+						log.Println("Verification message deleted for user:", userID)
 					}
 
 					if userIsAdminGroup {
@@ -403,7 +415,7 @@ func handleGroupMessage(bot *telebot.Bot, c telebot.Context, userID int64) error
 	if typeRestriction == "delete" {
 		userData, exists := storage.GetUser(userID)
 		if !exists || userData.IsPending {
-			// Удаляем сообщение пользователя
+			// Delete the user's message
 			if err := bot.Delete(c.Message()); err != nil {
 				log.Printf("Failed to delete message from @%s (ID: %d): %v", c.Sender().Username, userID, err)
 			} else {
@@ -454,9 +466,9 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		userID := c.Sender().ID
 		var groupChatID int64
 
-		// Определяем, где был вызван хендлер: в группе или в личном чате
+		// Determine where the handler was called: in a group or in a private chat
 		if c.Chat().Type == telebot.ChatPrivate {
-			// Проверяем, есть ли сохраненная группа для этого администратора
+			// Check if there is a saved group for this administrator
 			if groupID, exists := storage.GroupSetupState[userID]; exists {
 				groupChatID = groupID
 			} else {
@@ -468,12 +480,12 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 		log.Println("Group Chat ID:", groupChatID)
 
-		// Проверяем, является ли пользователь администратором группы
+		// Check if the user is an administrator of the group
 		if !isAdmin(bot, groupChatID, userID) {
 			return c.Send("You are not an administrator in this group.")
 		}
 
-		// Создаем запись для тестовой верификации администратора
+		// Create a record for the admin's test verification
 		adminUser := &storage.UserVerification{
 			UserID:         userID,
 			Username:       c.Sender().Username,
@@ -490,7 +502,7 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		// Check if verification parameters are set for the group
 		params, exists := storage.VerificationParamsMap[groupChatID]
 		if !exists {
-			//storage.RemoveUser(userID) // Удаляем тестовую запись, если параметры не настроены
+			//storage.RemoveUser(userID) // Remove the test record if parameters are not set
 			return c.Send("Verification parameters have not been set for this group.")
 		}
 
