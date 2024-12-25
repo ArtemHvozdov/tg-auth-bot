@@ -49,6 +49,7 @@ func StartBot(cfg config.Config) error {
 	bot.Handle("/setup", handlers.SetupHandler(bot))
 	bot.Handle("/verify", handlers.VerifyHandler(bot))
 	bot.Handle("/check_admin", handlers.CheckAdminHandler(bot))
+	bot.Handle("/test_verification", handlers.TestVerificationHandler(bot))
 	
 	messageTypes := []string{
 		telebot.OnText,
@@ -103,6 +104,16 @@ func AdminOnlyMiddleware(bot *telebot.Bot) telebot.MiddlewareFunc {
                     })
                     return nil // Ignore the command
                 }
+
+				// Deleta bot command after 1 minute from creator or administrator
+				if member.Role == "administrator" || member.Role == "creator" {
+					time.AfterFunc(1*time.Minute, func() {
+						err := bot.Delete(c.Message())
+						if err != nil {
+							log.Printf("Error deleting message: %v", err)
+						}
+					})
+				}
             }
 
             // Pass control to the next handler
@@ -110,4 +121,3 @@ func AdminOnlyMiddleware(bot *telebot.Bot) telebot.MiddlewareFunc {
         }
     }
 }
-

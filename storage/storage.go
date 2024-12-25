@@ -1,6 +1,11 @@
 package storage
 
-import "sync"
+import (
+	"log"
+	"sync"
+
+	"gopkg.in/telebot.v3"
+)
 
 type UserVerification struct {
 	UserID    int64
@@ -11,6 +16,34 @@ type UserVerification struct {
 	Verified  bool
 	SessionID int64
 	RestrictStatus bool
+	verifyMsg *VerifyMsg
+}
+
+type VerifyMsg struct {
+	msgId int
+	msg *telebot.Message
+}
+
+// Method for add verification message
+func (u *UserVerification) AddVerificationMsg(msgId int, msg *telebot.Message) {
+	u.verifyMsg = &VerifyMsg{
+		msgId: msgId,
+		msg: msg,
+	}
+}
+
+// Method for delete verification message
+func (uv *UserVerification) DeleteVerifyMessage(bot *telebot.Bot) error {
+	if uv.verifyMsg != nil && uv.verifyMsg.msg != nil {
+		err := bot.Delete(uv.verifyMsg.msg)
+		if err != nil {
+			log.Printf("Failed to delete verification message for user %d: %v", uv.UserID, err)
+			return err
+		}
+		log.Printf("Verification message deleted for user %d: message ID %d", uv.UserID, uv.verifyMsg.msgId)
+		uv.verifyMsg = nil
+	}
+	return nil
 }
 
 var (

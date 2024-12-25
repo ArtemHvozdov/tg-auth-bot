@@ -42,7 +42,7 @@ var requestMap = make(map[string]AuthRequestData)
 
 // GenerateAuthRequest generates a new authentication request and returns it as a JSON object
 func GenerateAuthRequest(userID int64, params storage.VerificationParams) ([]byte, error) {
-	rURL := "https://d88f-109-72-122-36.ngrok-free.app" // Updatesd with your actual URL
+	rURL := "https://0325-109-72-122-36.ngrok-free.app" // Updatesd with your actual URL
 	sessionID := "1"                                     // Use unique session IDs in production
 	//sessionID := strconv.Itoa(int(time.Now().UnixNano()))
 
@@ -198,6 +198,13 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if responseBytes == nil {
+		log.Println("Response is empty")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	} else {
+		log.Println("Response is here")
+	}
+
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(responseBytes)
@@ -205,7 +212,7 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 
 	// Logging user information
 	log.Println("Information of new member:", userData)
-
+	
 }
 
 
