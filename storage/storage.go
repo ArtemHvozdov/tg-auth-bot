@@ -11,6 +11,7 @@ type UserVerification struct {
 	Verified  bool
 	SessionID int64
 	RestrictStatus bool
+	verifyMsg any
 }
 
 var (

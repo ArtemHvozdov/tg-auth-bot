@@ -521,7 +521,20 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		}
 
 		if c.Chat().Type == telebot.ChatSuperGroup || c.Chat().Type == telebot.ChatGroup {
-			return c.Send("A verification link has been sent to your private messages. Please check your inbox.")
+			msg, err := bot.Send(c.Chat(), "A verification link has been sent to your private messages. Please check your inbox.")
+			//msg, err := c.Send("A verification link has been sent to your private messages. Please check your inbox.")
+			if err != nil {
+				log.Printf("Error sending group message: %v", err)
+				return err
+			}
+
+			// Schedule deletion of the message after 1 minute
+			go func() {
+				time.Sleep(1 * time.Minute)
+				if err := bot.Delete(msg); err != nil {
+					log.Printf("Error deleting message: %v", err)
+				}
+			}()
 		}
 
 		return nil
