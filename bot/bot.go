@@ -50,6 +50,7 @@ func StartBot(cfg config.Config) error {
 	bot.Handle("/verify", handlers.VerifyHandler(bot))
 	bot.Handle("/check_admin", handlers.CheckAdminHandler(bot))
 	bot.Handle("/test_verification", handlers.TestVerificationHandler(bot))
+	bot.Handle("/verified_users_list", handlers.VerifiedUsersListHeandler(bot))
 	
 	messageTypes := []string{
 		telebot.OnText,

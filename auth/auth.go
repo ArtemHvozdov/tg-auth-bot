@@ -42,7 +42,7 @@ var requestMap = make(map[string]AuthRequestData)
 
 // GenerateAuthRequest generates a new authentication request and returns it as a JSON object
 func GenerateAuthRequest(userID int64, params storage.VerificationParams) ([]byte, error) {
-	rURL := "https://0325-109-72-122-36.ngrok-free.app" // Updatesd with your actual URL
+	rURL := "https://3f94-178-133-60-30.ngrok-free.app" // Updatesd with your actual URL
 	sessionID := "1"                                     // Use unique session IDs in production
 	//sessionID := strconv.Itoa(int(time.Now().UnixNano()))
 

@@ -553,6 +553,48 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 	}
 }
 
+// heandler for /verified_users_list
+func VerifiedUsersListHeandler(bot *telebot.Bot) func(c telebot.Context) error {
+	return func(c telebot.Context) error {
+		userID := c.Sender().ID
+		targetChatGroupId := storage.GroupSetupState[userID]
+
+		verifiedUsers := make(map[string]string)
+
+		for _, user := range storage.UserStore {
+			if user.GroupID == targetChatGroupId && user.Verified && !user.IsPending {
+				// Проверяем наличие параметров верификации для группы
+				params, exists := storage.VerificationParamsMap[targetChatGroupId]
+				if !exists {
+					return c.Send("Verification parameters are not set for this group.")
+				}
+
+				// Извлекаем тип верификации
+				if userType, ok := params.Query["type"].(string); ok {
+					verifiedUsers[user.Username] = userType
+				} else {
+					verifiedUsers[user.Username] = "UnknownVerification"
+				}
+			}
+		}
+
+		// Если нет верифицированных пользователей
+		if len(verifiedUsers) == 0 {
+			return c.Send("No verified users in this group.")
+		}
+
+		// Формируем сообщение со списком
+		msg := "Verified users in this group:\n\n"
+		for username, userType := range verifiedUsers {
+			msg += fmt.Sprintf("@%s - %s\n", username, userType)
+		}
+
+		// Отправляем сообщение
+		return c.Send(msg)
+
+	}
+}
+
 func checkUserAsAdminInGroup(userID, groupID int64) bool {
 	if storage.GroupSetupState[userID] == groupID {
 		return true
