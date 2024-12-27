@@ -5,7 +5,7 @@ go 1.23.0
 require (
 	github.com/ethereum/go-ethereum v1.14.12
 	github.com/iden3/go-circuits/v2 v2.4.0
-	github.com/iden3/go-iden3-auth/v2 v2.6.0
+	github.com/iden3/go-iden3-auth/v2 v2.6.1-0.20241226132941-f1112f40f2ae
 	github.com/iden3/iden3comm/v2 v2.8.2
 	github.com/joho/godotenv v1.5.1
 	gopkg.in/telebot.v3 v3.3.8

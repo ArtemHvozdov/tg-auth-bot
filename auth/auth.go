@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+
 	//"strconv"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	circuits "github.com/iden3/go-circuits/v2"
 	auth "github.com/iden3/go-iden3-auth/v2"
+	"github.com/iden3/go-iden3-auth/v2/loaders"
 	"github.com/iden3/go-iden3-auth/v2/pubsignals"
 	"github.com/iden3/go-iden3-auth/v2/state"
 	"github.com/iden3/iden3comm/v2/protocol"
@@ -42,7 +44,7 @@ var requestMap = make(map[string]AuthRequestData)
 
 // GenerateAuthRequest generates a new authentication request and returns it as a JSON object
 func GenerateAuthRequest(userID int64, params storage.VerificationParams) ([]byte, error) {
-	rURL := "https://0325-109-72-122-36.ngrok-free.app" // Updatesd with your actual URL
+	rURL := "https://3f94-178-133-60-30.ngrok-free.app" // Updatesd with your actual URL
 	sessionID := "1"                                     // Use unique session IDs in production
 	//sessionID := strconv.Itoa(int(time.Now().UnixNano()))
 
@@ -119,7 +121,7 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 	contractAddress := "0x1a4cC30f2aA0377b0c3bc9848766D90cb4404124"
 	resolverPrefix := "polygon:amoy"
 	
-	keyDIR := "./keys"
+	//keyDIR := "./keys"
 
 	log.Println("Callback func: map request:", requestMap)
 
@@ -133,7 +135,7 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 
 	userID := authRequest.UserID
 
-	verificationKeyLoader := &KeyLoader{Dir: keyDIR}
+	//verificationKeyLoader := &KeyLoader{Dir: keyDIR}
 	resolver := state.ETHResolver{
 		RPCUrl:          ethURL,
 		ContractAddress: common.HexToAddress(contractAddress),
@@ -149,12 +151,9 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 		"privado:main": resolverPrivado, 
 	}
 
-	verifier, err := auth.NewVerifier(verificationKeyLoader, resolvers, auth.WithIPFSGateway("https://ipfs.io"))
-	if err != nil {
-		log.Println("Error creating verifier:", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
+	// 
+	
+	verifier, err := auth.NewVerifier(loaders.NewEmbeddedKeyLoader(), resolvers)
 
 	// Performing verification
 	authResponse, err := verifier.FullVerify(
