@@ -35,6 +35,9 @@ func StartBot(cfg config.Config) error {
 		{Text: "start", Description: "Launch bot"},
 		{Text: "verify", Description: "Go through verification"},
 		{Text: "setup", Description: "Configure verification settings"},
+		{Text: "check_admin", Description: "Check if the user and bot are an administrators"},
+		{Text: "test_verification", Description: "Test verification for admin"},
+		{Text: "verified_users_list", Description: "Get list of verified users"},
 		{Text: "help", Description: "Get information about commands"},
 	})
 	if err != nil {

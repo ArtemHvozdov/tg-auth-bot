@@ -29,10 +29,10 @@ func isAdmin(bot *telebot.Bot, chatID int64, userID int64) bool {
 // Handler for /start
 func StartHandler(bot *telebot.Bot) func(c telebot.Context) error {
     return func(c telebot.Context) error {
-        userName := c.Sender().FirstName
-        if c.Sender().LastName != "" {
-            userName += " " + c.Sender().Username
-        }
+        userName := c.Sender().Username
+        // if c.Sender().LastName != "" {
+        //     userName += " " + c.Sender().Username
+        // }
 
         msg := fmt.Sprintf(
             "Hello, %s!\n\nIf you want to be verified, run the command /verify.\nIf you want to configure the bot to verify participants, run the command /setup.",
@@ -66,6 +66,23 @@ func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 		log.Printf("User ID: %d, Chat ID: %d, Command received", userID, chatID)
 		log.Printf("User's name: %s %s (@%s)", c.Sender().FirstName, c.Sender().LastName, c.Sender().Username)
+
+		// // Schedule deletion of the message after 1 minute
+		// go func() {
+		// 	time.Sleep(1 * time.Minute)
+		// 	if err := bot.Delete(msg); err != nil {
+		// 		log.Printf("Error deleting message: %v", err)
+		// 	}
+		// }()
+
+		msgContinueForAdmin, _ := bot.Send(&telebot.Chat{ID: chatID}, "Administrator, return to the private chat with me to continue configuring the settings")
+
+		go func() {
+			time.Sleep(1 * time.Minute)
+			if err := bot.Delete(msgContinueForAdmin); err != nil {
+				log.Printf("Error deleting continue for admins message: %v", err)
+			}
+		}()
 
 		// Checking if the bot is an administrator in this group
 		member, err := bot.ChatMemberOf(&telebot.Chat{ID: chatID}, &telebot.User{ID: bot.Me.ID})
@@ -559,6 +576,13 @@ func VerifiedUsersListHeandler(bot *telebot.Bot) func(c telebot.Context) error {
 		userID := c.Sender().ID
 		targetChatGroupId := storage.GroupSetupState[userID]
 
+		chat, err := bot.ChatByID(targetChatGroupId)
+		if err != nil {
+			log.Printf("Error fetching chat: %v", err)
+			return c.Send("Failed to fetch chat information.")
+		}
+		targetChatGroupName := chat.Title
+
 		verifiedUsers := make(map[string]string)
 
 		for _, user := range storage.UserStore {
@@ -580,11 +604,15 @@ func VerifiedUsersListHeandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 		// Если нет верифицированных пользователей
 		if len(verifiedUsers) == 0 {
-			return c.Send("No verified users in this group.")
+			//return c.Send("No verified users in this group.")
+
+			return c.Send(fmt.Printf("No verified users in the group '%s'.", targetChatGroupName))
 		}
 
 		// Формируем сообщение со списком
-		msg := "Verified users in this group:\n\n"
+
+		msg := fmt.Sprintf("Verified users in the group '%s':\n\n", targetChatGroupName)
+		//msg := "Verified users in this group:\n\n"
 		for username, userType := range verifiedUsers {
 			msg += fmt.Sprintf("@%s - %s\n", username, userType)
 		}
