@@ -173,32 +173,32 @@ func GetRestrictionType(groupID int64) string {
 
 // VerifiedUsersList - list of verified users
 // Id Chat Group -> User Data 
-// var VerifiedUsersList = make(map[int64]VerifiedUser)
+var VerifiedUsersList = make(map[int64]VerifiedUser)
 
-// type User struct {
-// 	ID       int64
-// 	UserName string
-// 	VerifiedToken string
-// }
+type User struct {
+	ID       int64
+	UserName string
+	VerifiedToken string
+}
 
-// // User data
-// type VerifiedUser struct {
-// 	user User
-// 	typeVerification []string
-// }
+// User data
+type VerifiedUser struct {
+	user User
+	typeVerification string
+}
 
-// // AddVerifiedUser - add user to verified list
-// func AddVerifiedUser(groupID int64, userID int64, userName string, VerifiedToken string) {
-// 	DataMutex.Lock()
-// 	defer DataMutex.Unlock()
+// AddVerifiedUser - add user to verified list
+func AddVerifiedUser(groupID int64, userID int64, userName string, VerifiedToken string, typeVerification string) {
+	DataMutex.Lock()
+	defer DataMutex.Unlock()
 
-// 	user := User{
-// 		ID: userID,
-// 		UserName: userName,
-// 	}
+	user := User{
+		ID: userID,
+		UserName: userName,
+	}
 
-// 	VerifiedUsersList[groupID] = VerifiedUser{
-// 		user: user,
-// 		typeVerification: typeVerification,
-// 	}
-// }
+	VerifiedUsersList[groupID] = VerifiedUser{
+		user: user,
+		typeVerification: typeVerification,
+	}
+}

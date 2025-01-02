@@ -388,6 +388,22 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 					}
 
 					if userIsAdminGroup {
+						params, exists := storage.VerificationParamsMap[groupChatID]
+						if !exists {
+							log.Printf("Verification parameters are not set for the group '%s'.", storage.UserStore[userID].GroupName)
+							return
+						}
+
+						formattedParams, err := json.MarshalIndent(params, "", "  ")
+						if err != nil {
+							log.Printf("Failed to format verification parameters: %v", err)
+							return
+						}
+
+						bot.Send(&telebot.User{ID: userID}, fmt.Sprintf("Here are the current verification parameters:\n```\n%s\n```\n Type restriction new members: %s.\n", string(formattedParams), typeRestriction), &telebot.SendOptions{ParseMode: telebot.ModeMarkdown})
+
+						time.Sleep(500*time.Millisecond)
+
 						bot.Send(&telebot.User{ID: userID}, "The test was successful. The parameters are configured correctly, the verification process is working.")
 						storage.DeleteUser(userID)
 					}

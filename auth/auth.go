@@ -44,7 +44,7 @@ var requestMap = make(map[string]AuthRequestData)
 
 // GenerateAuthRequest generates a new authentication request and returns it as a JSON object
 func GenerateAuthRequest(userID int64, params storage.VerificationParams) ([]byte, error) {
-	rURL := "https://80f6-78-137-61-62.ngrok-free.app" // Updatesd with your actual URL
+	rURL := "https://6623-78-137-61-62.ngrok-free.app" // Updatesd with your actual URL
 	sessionID := "1"                                     // Use unique session IDs in production
 	//sessionID := strconv.Itoa(int(time.Now().UnixNano()))
 
@@ -198,10 +198,14 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add user data and token in the stroage
-	// userName := userData.Username
-	// userAuthGroupID := userData.GroupID
+	userName := userData.Username
+	userAuthGroupID := userData.GroupID
+
+	params := storage.VerificationParamsMap[userAuthGroupID]
+
+	typeVerification := params.Query["type"].(string)
 	
-	// storage.AddVerifiedUser(userAuthGroupID, userID, userName, tokenStr)
+	storage.AddVerifiedUser(userAuthGroupID, userID, userName, tokenStr, typeVerification)
 
 	// Response to request with verification result
 	responseBytes, err := json.Marshal(authResponse)
