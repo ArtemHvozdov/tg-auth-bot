@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"sync"
 
 	//"strconv"
 	//"sync"
@@ -15,6 +17,8 @@ import (
 
 	"gopkg.in/telebot.v3"
 )
+
+var DataMutex sync.Mutex
 
 // isAdmin checks if the user is a group admin
 func isAdmin(bot *telebot.Bot, chatID int64, userID int64) bool {
@@ -400,7 +404,35 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 							return
 						}
 
+						// Get the user's token
+						tokenStr, errGettingToken := GetAuthTokenFromAdmin(groupChatID, userID)
+						if !errGettingToken {
+							log.Printf("Failed to get token for user %d", userID)
+							return
+						}
+
+						// Create txt file for write token
+						fileName := fmt.Sprintf("token_%d.txt", userID)
+						err = os.WriteFile(fileName, []byte(tokenStr), 0644)
+						if err != nil {
+							log.Printf("Error writing AuthToken to file: %v", err)
+							bot.Send(&telebot.User{ID: userID}, "Failed to create file with AuthToken.")
+						}
+
+						defer os.Remove(fileName) // Удаляем файл после отправки
+
 						bot.Send(&telebot.User{ID: userID}, fmt.Sprintf("Here are the current verification parameters:\n```\n%s\n```\n Type restriction new members: %s.\n", string(formattedParams), typeRestriction), &telebot.SendOptions{ParseMode: telebot.ModeMarkdown})
+
+						time.Sleep(1*time.Second)
+
+						// Отправляем файл в чат
+						file := &telebot.Document{
+							File:     telebot.FromDisk(fileName),
+							FileName: fileName,
+						}
+
+						// Send token file to user
+						bot.Send(&telebot.User{ID: userID}, file)
 
 						time.Sleep(500*time.Millisecond)
 
@@ -528,6 +560,7 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 			Verified:       false,
 			SessionID:      0,
 			RestrictStatus: false,
+			Role : 			"admin",
 		}
 
 		storage.AddOrUpdateUser(userID, adminUser)
@@ -620,8 +653,6 @@ func VerifiedUsersListHeandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 		// Если нет верифицированных пользователей
 		if len(verifiedUsers) == 0 {
-			//return c.Send("No verified users in this group.")
-
 			return c.Send(fmt.Printf("No verified users in the group '%s'.", targetChatGroupName))
 		}
 
@@ -645,4 +676,24 @@ func checkUserAsAdminInGroup(userID, groupID int64) bool {
 	} else {
 		return false
 	}
+}
+
+func GetAuthTokenFromAdmin(groupID int64, userID int64) (string, bool) {
+	DataMutex.Lock()
+	defer DataMutex.Unlock()
+
+	// Check if the user list exists for the group
+	users, exists := storage.VerifiedUsersList[groupID]
+	if !exists {
+		return "", false // Group not found
+	}
+
+	// Search for the user by userID
+	for _, verifiedUser := range users {
+		if verifiedUser.User.ID == userID {
+			return verifiedUser.AuthToken, true // Token found
+		}
+	}
+
+	return "", false // User not found
 }

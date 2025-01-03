@@ -17,6 +17,8 @@ type UserVerification struct {
 	SessionID int64
 	RestrictStatus bool
 	verifyMsg *VerifyMsg
+	AuthToken string
+	Role string
 }
 
 type VerifyMsg struct {
@@ -173,7 +175,7 @@ func GetRestrictionType(groupID int64) string {
 
 // VerifiedUsersList - list of verified users
 // Id Chat Group -> User Data 
-var VerifiedUsersList = make(map[int64]VerifiedUser)
+var VerifiedUsersList = make(map[int64][]VerifiedUser)
 
 type User struct {
 	ID       int64
@@ -183,12 +185,13 @@ type User struct {
 
 // User data
 type VerifiedUser struct {
-	user User
-	typeVerification string
+	User User
+	TypeVerification string
+	AuthToken string
 }
 
 // AddVerifiedUser - add user to verified list
-func AddVerifiedUser(groupID int64, userID int64, userName string, VerifiedToken string, typeVerification string) {
+func AddVerifiedUser(groupID int64, userID int64, userName string, VerifiedToken string, typeVerification string, authToken string) {
 	DataMutex.Lock()
 	defer DataMutex.Unlock()
 
@@ -197,8 +200,13 @@ func AddVerifiedUser(groupID int64, userID int64, userName string, VerifiedToken
 		UserName: userName,
 	}
 
-	VerifiedUsersList[groupID] = VerifiedUser{
-		user: user,
-		typeVerification: typeVerification,
+	// Создаем запись для верифицированного пользователя
+	verifiedUser := VerifiedUser{
+		User:            user,
+		TypeVerification: typeVerification,
+		AuthToken:        authToken,
 	}
+
+	// Добавляем нового верифицированного пользователя в список группы
+	VerifiedUsersList[groupID] = append(VerifiedUsersList[groupID], verifiedUser)
 }
