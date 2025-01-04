@@ -419,13 +419,13 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 							bot.Send(&telebot.User{ID: userID}, "Failed to create file with AuthToken.")
 						}
 
-						defer os.Remove(fileName) // Удаляем файл после отправки
+						defer os.Remove(fileName) // Remove the file after sending
 
 						bot.Send(&telebot.User{ID: userID}, fmt.Sprintf("Here are the current verification parameters:\n```\n%s\n```\n Type restriction new members: %s.\n", string(formattedParams), typeRestriction), &telebot.SendOptions{ParseMode: telebot.ModeMarkdown})
 
 						time.Sleep(1*time.Second)
 
-						// Отправляем файл в чат
+						// Send the file to the chat
 						file := &telebot.Document{
 							File:     telebot.FromDisk(fileName),
 							FileName: fileName,
@@ -438,6 +438,7 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 
 						bot.Send(&telebot.User{ID: userID}, "The test was successful. The parameters are configured correctly, the verification process is working.")
 						storage.DeleteUser(userID)
+						storage.RemoveVerifiedUser(groupChatID, userID)
 					}
 				} else {
 					// Verification failed
@@ -623,50 +624,39 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 func VerifiedUsersListHeandler(bot *telebot.Bot) func(c telebot.Context) error {
 	return func(c telebot.Context) error {
 		userID := c.Sender().ID
-		targetChatGroupId := storage.GroupSetupState[userID]
 
-		chat, err := bot.ChatByID(targetChatGroupId)
+		// Check if the group is set up for this user
+		targetChatGroupID, exists := storage.GroupSetupState[userID]
+		if !exists {
+			return c.Send("You need to set up a group for verification.")
+		}
+
+		// Get chat data
+		chat, err := bot.ChatByID(targetChatGroupID)
 		if err != nil {
 			log.Printf("Error fetching chat: %v", err)
 			return c.Send("Failed to fetch chat information.")
 		}
 		targetChatGroupName := chat.Title
 
-		verifiedUsers := make(map[string]string)
+		// Get the list of verified users for the group
+		storage.DataMutex.Lock()
+		verifiedUsers, groupExists := storage.VerifiedUsersList[targetChatGroupID]
+		storage.DataMutex.Unlock()
 
-		for _, user := range storage.UserStore {
-			if user.GroupID == targetChatGroupId && user.Verified && !user.IsPending {
-				// Проверяем наличие параметров верификации для группы
-				params, exists := storage.VerificationParamsMap[targetChatGroupId]
-				if !exists {
-					return c.Send("Verification parameters are not set for this group.")
-				}
-
-				// Извлекаем тип верификации
-				if userType, ok := params.Query["type"].(string); ok {
-					verifiedUsers[user.Username] = userType
-				} else {
-					verifiedUsers[user.Username] = "UnknownVerification"
-				}
-			}
+		// If the list for the group is empty or the group does not exist
+		if !groupExists || len(verifiedUsers) == 0 {
+			return c.Send(fmt.Sprintf("No verified users in the group '%s'.", targetChatGroupName))
 		}
 
-		// Если нет верифицированных пользователей
-		if len(verifiedUsers) == 0 {
-			return c.Send(fmt.Printf("No verified users in the group '%s'.", targetChatGroupName))
-		}
-
-		// Формируем сообщение со списком
-
+		// Forming a message with a list of verified users
 		msg := fmt.Sprintf("Verified users in the group '%s':\n\n", targetChatGroupName)
-		//msg := "Verified users in this group:\n\n"
-		for username, userType := range verifiedUsers {
-			msg += fmt.Sprintf("@%s - %s\n", username, userType)
+		for _, verifiedUser := range verifiedUsers {
+			msg += fmt.Sprintf("@%s - %s\n", verifiedUser.User.UserName, verifiedUser.TypeVerification)
 		}
 
-		// Отправляем сообщение
+		// Send a message
 		return c.Send(msg)
-
 	}
 }
 
