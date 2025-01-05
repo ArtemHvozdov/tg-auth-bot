@@ -496,9 +496,24 @@ func handleGroupMessage(bot *telebot.Bot, c telebot.Context, userID int64) error
 
 func handlePrivateMessage(bot *telebot.Bot, c telebot.Context) error {
 	userID := c.Sender().ID
+
 	groupChatID := storage.GroupSetupState[userID]
+	if groupChatID == 0 {
+		log.Println("Group not set up for user:", userID)
+		return nil
+	}
+
 	groupChat, _ := bot.ChatByID(groupChatID)
+	if groupChat == nil {
+		log.Printf("Failed to fetch group chat by ID: %d", groupChatID)
+		return nil
+	}
+
 	groupChatName := groupChat.Title
+	if groupChatName == "" {
+		log.Printf("Failed to fetch group chat name by ID: %d", groupChatID)
+		return nil
+	}
 
     var params storage.VerificationParams
 
