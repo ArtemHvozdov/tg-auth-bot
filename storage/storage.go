@@ -17,6 +17,8 @@ type UserVerification struct {
 	SessionID int64
 	RestrictStatus bool
 	verifyMsg *VerifyMsg
+	AuthToken string
+	Role string
 }
 
 type VerifyMsg struct {
@@ -169,4 +171,78 @@ func GetRestrictionType(groupID int64) string {
 		return ""
 	}
 	return restrictionType
+}
+
+// VerifiedUsersList - list of verified users
+// Id Chat Group -> User Data 
+var VerifiedUsersList = make(map[int64][]VerifiedUser)
+
+type User struct {
+	ID       int64
+	UserName string
+	VerifiedToken string
+}
+
+// User data
+type VerifiedUser struct {
+	User User
+	TypeVerification string
+	AuthToken string
+}
+
+// AddVerifiedUser - add user to verified list
+func AddVerifiedUser(groupID int64, userID int64, userName string, VerifiedToken string, typeVerification string, authToken string) {
+	DataMutex.Lock()
+	defer DataMutex.Unlock()
+
+	user := User{
+		ID: userID,
+		UserName: userName,
+	}
+
+	// Create a record for the verified user
+	verifiedUser := VerifiedUser{
+		User:            user,
+		TypeVerification: typeVerification,
+		AuthToken:        authToken,
+	}
+
+	// Add a new verified user to the group's list
+	VerifiedUsersList[groupID] = append(VerifiedUsersList[groupID], verifiedUser)
+}
+
+// RemoveVerifiedUser removes a user from VerifiedUsersList by group ID and user ID
+func RemoveVerifiedUser(groupID int64, userID int64)  {
+	DataMutex.Lock()
+	defer DataMutex.Unlock()
+
+	// Check if the group exists in VerifiedUsersList
+	users, exists := VerifiedUsersList[groupID]
+	if !exists {
+		log.Printf("Group %d not found in VerifiedUsersList", groupID)
+		return
+	}
+
+	// Find the index of the user in the group's list
+	index := -1
+	for i, user := range users {
+		if user.User.ID == userID {
+			index = i
+			break
+		}
+	}
+
+	// If the user is not found, return false
+	if index == -1 {
+		log.Printf("User %d not found in group %d", userID, groupID)
+		return 
+	}
+
+	// Remove the user from the list
+	VerifiedUsersList[groupID] = append(users[:index], users[index+1:]...)
+
+	// If the group's list is empty after removal, delete the group from VerifiedUsersList
+	if len(VerifiedUsersList[groupID]) == 0 {
+		delete(VerifiedUsersList, groupID)
+	}
 }

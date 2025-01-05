@@ -44,7 +44,7 @@ var requestMap = make(map[string]AuthRequestData)
 
 // GenerateAuthRequest generates a new authentication request and returns it as a JSON object
 func GenerateAuthRequest(userID int64, params storage.VerificationParams) ([]byte, error) {
-	rURL := "https://3f94-178-133-60-30.ngrok-free.app" // Updatesd with your actual URL
+	rURL := "https://0564-78-137-61-62.ngrok-free.app" // Updatesd with your actual URL // Updatesd with your actual URL
 	sessionID := "1"                                     // Use unique session IDs in production
 	//sessionID := strconv.Itoa(int(time.Now().UnixNano()))
 
@@ -117,6 +117,10 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Conevrting the token to a string
+	tokenStr := string(tokenBytes)
+	log.Println("Token string:", tokenStr)
+
 	ethURL := "https://polygon-amoy.infura.io/v3/a1e81bcaca104bf9ad54f4e88b4c3554"
 	contractAddress := "0x1a4cC30f2aA0377b0c3bc9848766D90cb4404124"
 	resolverPrefix := "polygon:amoy"
@@ -151,9 +155,14 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 		"privado:main": resolverPrivado, 
 	}
 
-	// 
-	
+  //verifier, err := auth.NewVerifier(verificationKeyLoader, resolvers, auth.WithIPFSGateway("https://ipfs.io"))
 	verifier, err := auth.NewVerifier(loaders.NewEmbeddedKeyLoader(), resolvers)
+	if err != nil {
+		log.Println("Error creating verifier:", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
 
 	// Performing verification
 	authResponse, err := verifier.FullVerify(
@@ -188,6 +197,22 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 		})
 		log.Printf("User @%s (ID: %d) successfully verified via callback.", userData.Username, userID)
 	}
+
+	// Add user data and token in the stroage
+	userName := userData.Username
+	userAuthGroupID := userData.GroupID
+
+	params := storage.VerificationParamsMap[userAuthGroupID]
+
+	typeVerification := params.Query["type"].(string)
+
+	if userData.Role == "admin" {
+		storage.AddVerifiedUser(userAuthGroupID, userID, userName, tokenStr, typeVerification, tokenStr)
+	} else {
+		storage.AddVerifiedUser(userAuthGroupID, userID, userName, tokenStr, typeVerification, "")
+	}
+	
+	//storage.AddVerifiedUser(userAuthGroupID, userID, userName, tokenStr, typeVerification, "")
 
 	// Response to request with verification result
 	responseBytes, err := json.Marshal(authResponse)

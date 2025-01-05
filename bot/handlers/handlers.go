@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"sync"
 
 	//"strconv"
 	//"sync"
@@ -15,6 +17,8 @@ import (
 
 	"gopkg.in/telebot.v3"
 )
+
+var DataMutex sync.Mutex
 
 // isAdmin checks if the user is a group admin
 func isAdmin(bot *telebot.Bot, chatID int64, userID int64) bool {
@@ -29,10 +33,10 @@ func isAdmin(bot *telebot.Bot, chatID int64, userID int64) bool {
 // Handler for /start
 func StartHandler(bot *telebot.Bot) func(c telebot.Context) error {
     return func(c telebot.Context) error {
-        userName := c.Sender().FirstName
-        if c.Sender().LastName != "" {
-            userName += " " + c.Sender().Username
-        }
+        userName := c.Sender().Username
+        // if c.Sender().LastName != "" {
+        //     userName += " " + c.Sender().Username
+        // }
 
         msg := fmt.Sprintf(
             "Hello, %s!\n\nIf you want to be verified, run the command /verify.\nIf you want to configure the bot to verify participants, run the command /setup.",
@@ -66,6 +70,23 @@ func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 		log.Printf("User ID: %d, Chat ID: %d, Command received", userID, chatID)
 		log.Printf("User's name: %s %s (@%s)", c.Sender().FirstName, c.Sender().LastName, c.Sender().Username)
+
+		// // Schedule deletion of the message after 1 minute
+		// go func() {
+		// 	time.Sleep(1 * time.Minute)
+		// 	if err := bot.Delete(msg); err != nil {
+		// 		log.Printf("Error deleting message: %v", err)
+		// 	}
+		// }()
+
+		msgContinueForAdmin, _ := bot.Send(&telebot.Chat{ID: chatID}, "Administrator, return to the private chat with me to continue configuring the settings")
+
+		go func() {
+			time.Sleep(1 * time.Minute)
+			if err := bot.Delete(msgContinueForAdmin); err != nil {
+				log.Printf("Error deleting continue for admins message: %v", err)
+			}
+		}()
 
 		// Checking if the bot is an administrator in this group
 		member, err := bot.ChatMemberOf(&telebot.Chat{ID: chatID}, &telebot.User{ID: bot.Me.ID})
@@ -371,8 +392,53 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 					}
 
 					if userIsAdminGroup {
+						params, exists := storage.VerificationParamsMap[groupChatID]
+						if !exists {
+							log.Printf("Verification parameters are not set for the group '%s'.", storage.UserStore[userID].GroupName)
+							return
+						}
+
+						formattedParams, err := json.MarshalIndent(params, "", "  ")
+						if err != nil {
+							log.Printf("Failed to format verification parameters: %v", err)
+							return
+						}
+
+						// Get the user's token
+						tokenStr, errGettingToken := GetAuthTokenFromAdmin(groupChatID, userID)
+						if !errGettingToken {
+							log.Printf("Failed to get token for user %d", userID)
+							return
+						}
+
+						// Create txt file for write token
+						fileName := fmt.Sprintf("token_%d.txt", userID)
+						err = os.WriteFile(fileName, []byte(tokenStr), 0644)
+						if err != nil {
+							log.Printf("Error writing AuthToken to file: %v", err)
+							bot.Send(&telebot.User{ID: userID}, "Failed to create file with AuthToken.")
+						}
+
+						defer os.Remove(fileName) // Remove the file after sending
+
+						bot.Send(&telebot.User{ID: userID}, fmt.Sprintf("Here are the current verification parameters:\n```\n%s\n```\n Type restriction new members: %s.\n", string(formattedParams), typeRestriction), &telebot.SendOptions{ParseMode: telebot.ModeMarkdown})
+
+						time.Sleep(1*time.Second)
+
+						// Send the file to the chat
+						file := &telebot.Document{
+							File:     telebot.FromDisk(fileName),
+							FileName: fileName,
+						}
+
+						// Send token file to user
+						bot.Send(&telebot.User{ID: userID}, file)
+
+						time.Sleep(500*time.Millisecond)
+
 						bot.Send(&telebot.User{ID: userID}, "The test was successful. The parameters are configured correctly, the verification process is working.")
 						storage.DeleteUser(userID)
+						storage.RemoveVerifiedUser(groupChatID, userID)
 					}
 				} else {
 					// Verification failed
@@ -430,9 +496,24 @@ func handleGroupMessage(bot *telebot.Bot, c telebot.Context, userID int64) error
 
 func handlePrivateMessage(bot *telebot.Bot, c telebot.Context) error {
 	userID := c.Sender().ID
+
 	groupChatID := storage.GroupSetupState[userID]
+	if groupChatID == 0 {
+		log.Println("Group not set up for user:", userID)
+		return nil
+	}
+
 	groupChat, _ := bot.ChatByID(groupChatID)
+	if groupChat == nil {
+		log.Printf("Failed to fetch group chat by ID: %d", groupChatID)
+		return nil
+	}
+
 	groupChatName := groupChat.Title
+	if groupChatName == "" {
+		log.Printf("Failed to fetch group chat name by ID: %d", groupChatID)
+		return nil
+	}
 
     var params storage.VerificationParams
 
@@ -495,6 +576,7 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 			Verified:       false,
 			SessionID:      0,
 			RestrictStatus: false,
+			Role : 			"admin",
 		}
 
 		storage.AddOrUpdateUser(userID, adminUser)
@@ -553,10 +635,70 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 	}
 }
 
+// heandler for /verified_users_list
+func VerifiedUsersListHeandler(bot *telebot.Bot) func(c telebot.Context) error {
+	return func(c telebot.Context) error {
+		userID := c.Sender().ID
+
+		// Check if the group is set up for this user
+		targetChatGroupID, exists := storage.GroupSetupState[userID]
+		if !exists {
+			return c.Send("You need to set up a group for verification.")
+		}
+
+		// Get chat data
+		chat, err := bot.ChatByID(targetChatGroupID)
+		if err != nil {
+			log.Printf("Error fetching chat: %v", err)
+			return c.Send("Failed to fetch chat information.")
+		}
+		targetChatGroupName := chat.Title
+
+		// Get the list of verified users for the group
+		storage.DataMutex.Lock()
+		verifiedUsers, groupExists := storage.VerifiedUsersList[targetChatGroupID]
+		storage.DataMutex.Unlock()
+
+		// If the list for the group is empty or the group does not exist
+		if !groupExists || len(verifiedUsers) == 0 {
+			return c.Send(fmt.Sprintf("No verified users in the group '%s'.", targetChatGroupName))
+		}
+
+		// Forming a message with a list of verified users
+		msg := fmt.Sprintf("Verified users in the group '%s':\n\n", targetChatGroupName)
+		for _, verifiedUser := range verifiedUsers {
+			msg += fmt.Sprintf("@%s - %s\n", verifiedUser.User.UserName, verifiedUser.TypeVerification)
+		}
+
+		// Send a message
+		return c.Send(msg)
+	}
+}
+
 func checkUserAsAdminInGroup(userID, groupID int64) bool {
 	if storage.GroupSetupState[userID] == groupID {
 		return true
 	} else {
 		return false
 	}
+}
+
+func GetAuthTokenFromAdmin(groupID int64, userID int64) (string, bool) {
+	DataMutex.Lock()
+	defer DataMutex.Unlock()
+
+	// Check if the user list exists for the group
+	users, exists := storage.VerifiedUsersList[groupID]
+	if !exists {
+		return "", false // Group not found
+	}
+
+	// Search for the user by userID
+	for _, verifiedUser := range users {
+		if verifiedUser.User.ID == userID {
+			return verifiedUser.AuthToken, true // Token found
+		}
+	}
+
+	return "", false // User not found
 }
