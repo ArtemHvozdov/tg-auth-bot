@@ -303,7 +303,23 @@ func VerifyHandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 		userGroupID := storage.UserStore[userID].GroupID
 
-		jsonData, _ := auth.GenerateAuthRequest(userID, storage.VerificationParamsMap[userGroupID])
+		// Получение конфигурации группы
+		groupConfig, exists := storage.VerificationParamsMap[userGroupID]
+		if !exists {
+			log.Printf("Verification parameters not found for group ID: %d", userGroupID)
+			return c.Send("Verification parameters are not configured for your group.")
+		}
+
+		// Проверяем, что активный индекс корректен
+		if groupConfig.AcriveIndex < 0 || groupConfig.AcriveIndex >= len(groupConfig.VerificationParams) {
+			log.Printf("Invalid active index for group ID: %d", userGroupID)
+			return c.Send("Verification configuration error. Please contact the group administrator.")
+		}
+
+		// Получаем активные параметры верификации
+		activeParams := groupConfig.VerificationParams[groupConfig.AcriveIndex]
+
+		jsonData, _ := auth.GenerateAuthRequest(userID, activeParams)
 
 		base64Data := base64.StdEncoding.EncodeToString(jsonData)
 
@@ -529,10 +545,28 @@ func handlePrivateMessage(bot *telebot.Bot, c telebot.Context) error {
 		log.Println("JSON does not contain all required fields.")
 		bot.Send(c.Sender(), "Missing required fields in JSON. Please include 'circuitId', 'id', and 'query'.")
 		return nil
-			}
+	}
+
+	// Получение или инициализация конфигурации группы
+	groupConfig, exists := storage.VerificationParamsMap[groupChatID]
+	if !exists {
+		groupConfig = storage.GroupVerificationConfig{
+			VerificationParams: []storage.VerificationParams{},
+			AcriveIndex:        -1, // Изначально ни один параметр не активен
+		}
+	}
+
+	// Добавление нового параметра верификации
+	groupConfig.VerificationParams = append(groupConfig.VerificationParams, params)
+
+	// Установка ActiveIndex в 0, если это первый параметр
+	if len(groupConfig.VerificationParams) == 1 {
+		groupConfig.AcriveIndex = 0
+	}
 
     // Save parameters to storage
-	storage.VerificationParamsMap[groupChatID] = params
+	//storage.VerificationParamsMap[groupChatID] = params
+	storage.VerificationParamsMap[groupChatID] = groupConfig
 	log.Printf("Verification parameters set for group '%s': %+v", groupChatName, params)
 
 	// Notify admin about successful setup
@@ -582,11 +616,27 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		storage.AddOrUpdateUser(userID, adminUser)
 
 		// Check if verification parameters are set for the group
-		params, exists := storage.VerificationParamsMap[groupChatID]
+		// params, exists := storage.VerificationParamsMap[groupChatID]
+		// if !exists {
+		// 	//storage.RemoveUser(userID) // Remove the test record if parameters are not set
+		// 	return c.Send("Verification parameters have not been set for this group.")
+		// }
+
+		// Получение конфигурации группы
+		groupConfig, exists := storage.VerificationParamsMap[groupChatID]
 		if !exists {
-			//storage.RemoveUser(userID) // Remove the test record if parameters are not set
-			return c.Send("Verification parameters have not been set for this group.")
+			log.Printf("Verification parameters not found for group ID: %d", groupChatID)
+			return c.Send("Verification parameters are not configured for your group.")
 		}
+
+		// Проверяем, что активный индекс корректен
+		if groupConfig.AcriveIndex < 0 || groupConfig.AcriveIndex >= len(groupConfig.VerificationParams) {
+			log.Printf("Invalid active index for group ID: %d", groupChatID)
+			return c.Send("Verification configuration error. Please contact the group administrator.")
+		}
+
+		// Получаем активные параметры верификации
+		params := groupConfig.VerificationParams[groupConfig.AcriveIndex]
 
 		// Generate a test request for verification
 		jsonData, err := auth.GenerateAuthRequest(userID, params)

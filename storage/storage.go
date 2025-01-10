@@ -127,8 +127,13 @@ type VerificationParams struct {
 	Query            map[string]interface{} `json:"query"`
 }
 
+type GroupVerificationConfig struct {
+	VerificationParams []VerificationParams
+	AcriveIndex		int
+}
+
 // Struct paramets: ID Group - auth parametrs
-var VerificationParamsMap = make(map[int64]VerificationParams)
+var VerificationParamsMap = make(map[int64]GroupVerificationConfig)
 
 // Admin User ID - Group ID
 var GroupSetupState = make(map[int64]int64)
