@@ -39,6 +39,9 @@ func StartBot(cfg config.Config) error {
 		{Text: "test_verification", Description: "Test verification for admin"},
 		{Text: "verified_users_list", Description: "Get list of verified users"},
 		{Text: "help", Description: "Get information about commands"},
+		{Text: "add_verification_params", Description: "Add verification parameters"},
+		{Text: "list_verification_params", Description: "List verification parameters"},
+		{Text: "set_active_verification_params", Description: "Set active verification parameters"},
 	})
 	if err != nil {
 		log.Printf("Failed to set bot commands: %v", err)
@@ -54,7 +57,10 @@ func StartBot(cfg config.Config) error {
 	bot.Handle("/check_admin", handlers.CheckAdminHandler(bot))
 	bot.Handle("/test_verification", handlers.TestVerificationHandler(bot))
 	bot.Handle("/verified_users_list", handlers.VerifiedUsersListHeandler(bot))
-	
+	bot.Handle("/add_verification_params", handlers.AddVerificationParamsHandler(bot))
+	bot.Handle("/list_verification_params", handlers.ListVerificationParamsHandler(bot))
+	bot.Handle("/set_active_verification_params", handlers.SetActiveVerificationParamsHandler(bot))
+		
 	messageTypes := []string{
 		telebot.OnText,
 		telebot.OnPhoto,

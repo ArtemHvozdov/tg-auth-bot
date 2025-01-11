@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 
 	//"strconv"
@@ -175,8 +176,10 @@ func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 			log.Println(storage.RestrictionType[chatID])
 
+			time.Sleep(500*time.Millisecond)
 			// Ask for verification parameters
-			askVerificationParams(bot, userID)
+			bot.Send(&telebot.User{ID: userID}, "To add verification parameters, call the command\n /add_verification_params")
+			//askVerificationParams(bot, userID)
 			return nil
 		})
 
@@ -184,8 +187,10 @@ func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 			storage.AddRestrictionType(chatID, "delete")
 			bot.Send(&telebot.User{ID: userID}, "Restriction type set to 'delete'.")
 
+			time.Sleep(500*time.Millisecond)
 			// Ask for verification parameters
-			askVerificationParams(bot, userID)
+			bot.Send(&telebot.User{ID: userID}, "To add verification parameters, call the command /add_verification_params")
+			//askVerificationParams(bot, userID)
 			return nil
 		})
 
@@ -194,22 +199,22 @@ func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 }
 
 // askVerificationParams sends a request for verification parameters to the admin
-func askVerificationParams(bot *telebot.Bot, userID int64) {
-	bot.Send(&telebot.User{ID: userID}, "Send verification parameters in JSON format in this private chat. Example:\n\n"+
-		"{\n"+
-		"  \"circuitId\": \"AtomicQuerySigV2CircuitID\",\n"+
-		"  \"id\": 1,\n"+
-		"  \"query\": {\n"+
-		"    \"allowedIssuers\": [\"*\"],\n"+
-		"    \"context\": \"https://example.com/context\",\n"+
-		"    \"type\": \"ExampleType\",\n"+
-		"    \"credentialSubject\": {\n"+
-		"      \"birthday\": {\"$lt\": 20000101}\n"+
-		"    }\n"+
-		"  }\n"+
-		"}",
-	)
-}
+// func askVerificationParams(bot *telebot.Bot, userID int64) {
+// 	bot.Send(&telebot.User{ID: userID}, "Send verification parameters in JSON format in this private chat. Example:\n\n"+
+// 		"{\n"+
+// 		"  \"circuitId\": \"AtomicQuerySigV2CircuitID\",\n"+
+// 		"  \"id\": 1,\n"+
+// 		"  \"query\": {\n"+
+// 		"    \"allowedIssuers\": [\"*\"],\n"+
+// 		"    \"context\": \"https://example.com/context\",\n"+
+// 		"    \"type\": \"ExampleType\",\n"+
+// 		"    \"credentialSubject\": {\n"+
+// 		"      \"birthday\": {\"$lt\": 20000101}\n"+
+// 		"    }\n"+
+// 		"  }\n"+
+// 		"}",
+// 	)
+// }
 
 
 // A new user has joined the group
@@ -555,22 +560,27 @@ func handlePrivateMessage(bot *telebot.Bot, c telebot.Context) error {
 			AcriveIndex:        -1, // Изначально ни один параметр не активен
 		}
 	}
+	// Проверка: первый ли это параметр верификации
+	isFirstParameter := len(groupConfig.VerificationParams) == 0
 
 	// Добавление нового параметра верификации
 	groupConfig.VerificationParams = append(groupConfig.VerificationParams, params)
 
 	// Установка ActiveIndex в 0, если это первый параметр
-	if len(groupConfig.VerificationParams) == 1 {
+	if isFirstParameter {
 		groupConfig.AcriveIndex = 0
 	}
 
-    // Save parameters to storage
-	//storage.VerificationParamsMap[groupChatID] = params
+	// Сохранение параметров в хранилище
 	storage.VerificationParamsMap[groupChatID] = groupConfig
 	log.Printf("Verification parameters set for group '%s': %+v", groupChatName, params)
 
-	// Notify admin about successful setup
-	bot.Send(c.Sender(), fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", groupChatName))
+	// Отправка сообщения в зависимости от количества параметров
+	if isFirstParameter {
+		bot.Send(c.Sender(), fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", groupChatName))
+	} else {
+		bot.Send(c.Sender(), "Additional verification parameters have been added.")
+	}
 	return nil
 		
 }
@@ -638,6 +648,12 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		// Получаем активные параметры верификации
 		params := groupConfig.VerificationParams[groupConfig.AcriveIndex]
 
+		// Определяем тип текущей верификации
+		verificationType := "unknown"
+		if queryType, ok := params.Query["type"].(string); ok {
+			verificationType = queryType
+		}
+
 		// Generate a test request for verification
 		jsonData, err := auth.GenerateAuthRequest(userID, params)
 		if err != nil {
@@ -649,7 +665,7 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		deepLink := fmt.Sprintf("https://wallet.privado.id/#i_m=%s", base64Data)
 
 		btn := telebot.InlineButton{
-			Text: "Test verify",
+			Text: fmt.Sprintf("Test verify (%s)", verificationType),
 			URL:  deepLink,
 		}
 
@@ -724,6 +740,177 @@ func VerifiedUsersListHeandler(bot *telebot.Bot) func(c telebot.Context) error {
 		return c.Send(msg)
 	}
 }
+
+// AddVerificationParamsHandler handles adding verification parameters in a single step
+func AddVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) error {
+    return func(c telebot.Context) error {
+        userID := c.Sender().ID
+
+        // Check if the user is linked to a group setup
+        groupChatID := storage.GroupSetupState[userID]
+        if groupChatID == 0 {
+            log.Println("Group not set up for user:", userID)
+            return c.Send("You are not associated with any group. Use /setup first.")
+        }
+
+        groupChat, _ := bot.ChatByID(groupChatID)
+        if groupChat == nil {
+            log.Printf("Failed to fetch group chat by ID: %d", groupChatID)
+            return c.Send("Failed to fetch the group chat. Please try again.")
+        }
+
+        // Request verification parameters
+        exampleJSON := "{\n" +
+            "  \"circuitId\": \"AtomicQuerySigV2CircuitID\",\n" +
+            "  \"id\": 1,\n" +
+            "  \"query\": {\n" +
+            "    \"allowedIssuers\": [\"*\"],\n" +
+            "    \"context\": \"https://example.com/context\",\n" +
+            "    \"type\": \"ExampleType\",\n" +
+            "    \"credentialSubject\": {\n" +
+            "      \"birthday\": {\"$lt\": 20000101}\n" +
+            "    }\n" +
+            "  }\n" +
+            "}"
+        return c.Send("Please send verification parameters in JSON format. Example:\n\n" + exampleJSON)
+    }
+}
+
+// ListVerificationParamsHandler displays the list of added verification parameters
+func ListVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) error {
+    return func(c telebot.Context) error {
+        userID := c.Sender().ID
+
+        // Check if the user is linked to a group setup
+        groupChatID := storage.GroupSetupState[userID]
+        if groupChatID == 0 {
+            log.Println("Group not set up for user:", userID)
+            return c.Send("You are not associated with any group. Use /setup first.")
+        }
+
+        // Fetch group configuration
+        groupConfig, exists := storage.VerificationParamsMap[groupChatID]
+        if !exists || len(groupConfig.VerificationParams) == 0 {
+            log.Println("No verification parameters found for group:", groupChatID)
+            return c.Send("No verification parameters have been added yet. Use /add_verification_params to add one.")
+        }
+
+        // Build the list of verification parameters
+        var response strings.Builder
+        response.WriteString("Verification parameters for the group:\n\n")
+        for i, param := range groupConfig.VerificationParams {
+            activeMarker := ""
+            if i == groupConfig.AcriveIndex {
+                activeMarker = " (active)"
+            }
+
+            // Extract the "type" field from the "query"
+            queryType := "unknown" // Default value in case "type" is missing
+            if query, ok := param.Query["type"]; ok {
+                if queryStr, ok := query.(string); ok {
+                    queryType = queryStr
+                }
+            }
+
+            response.WriteString(fmt.Sprintf("%d. Type: %s%s\n", i+1, queryType, activeMarker))
+        }
+
+        // Send the list to the admin
+        return c.Send(response.String())
+    }
+}
+
+// Handler to switch active verification parameters
+func SetActiveVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) error {
+	return func(c telebot.Context) error {
+		userID := c.Sender().ID
+		var groupChatID int64
+
+		// Determine where the handler was called: in a group or in a private chat
+		if c.Chat().Type == telebot.ChatPrivate {
+			// Check if there is a saved group for this administrator
+			if groupID, exists := storage.GroupSetupState[userID]; exists {
+				groupChatID = groupID
+			} else {
+				return c.Send("You need to specify a group for verification setup.")
+			}
+		} else {
+			groupChatID = c.Chat().ID
+		}
+
+		// Check if the user is an administrator of the group
+		if !isAdmin(bot, groupChatID, userID) {
+			return c.Send("You are not an administrator in this group.")
+		}
+
+		// Fetch the group's verification parameters
+		groupConfig, exists := storage.VerificationParamsMap[groupChatID]
+		if !exists || len(groupConfig.VerificationParams) == 0 {
+			return c.Send("No verification parameters have been set for this group.")
+		}
+
+		// If there is only one verification parameter, notify the admin
+		if len(groupConfig.VerificationParams) == 1 {
+			return c.Send("Only one verification type is available. Switching is not possible.")
+		}
+
+		// Generate buttons for all verification types
+		inlineKeyboard := &telebot.ReplyMarkup{}
+		for i, param := range groupConfig.VerificationParams {
+			text := fmt.Sprintf("%d. %s", i+1, param.Query["type"])
+			if i == groupConfig.AcriveIndex {
+				text += " (active)"
+			}
+
+			btn := telebot.InlineButton{
+				Text:   text,
+				Unique: fmt.Sprintf("switch_param_%d", i),
+			}
+			// Register callback handler for the button
+			bot.Handle(&btn, func(c telebot.Context) error {
+				// Handle button click
+				index := i
+
+				// Validate the index
+				if index < 0 || index >= len(groupConfig.VerificationParams) {
+					return c.Respond(&telebot.CallbackResponse{
+						Text: "Invalid selection.",
+					})
+				}
+
+				// If the selected index is already active, notify the admin
+				if groupConfig.AcriveIndex == index {
+					_, err := bot.Send(c.Sender(), fmt.Sprintf(
+						"The selected verification type '%s' is already active.",
+						groupConfig.VerificationParams[index].Query["type"],
+					))
+					return err
+				}
+
+				// Update the active index
+				groupConfig.AcriveIndex = index
+				storage.VerificationParamsMap[groupChatID] = groupConfig
+
+				// Notify the admin of the change
+				typeStr, ok := groupConfig.VerificationParams[index].Query["type"].(string)
+				if !ok {
+					typeStr = "Unknown type"
+				}
+
+				bot.Send(c.Sender(), fmt.Sprintf("Verification type '%s' has been set as active.", typeStr))
+
+				// Respond to the callback to clear the loading state on the button
+				return c.Respond()
+			})
+
+			inlineKeyboard.InlineKeyboard = append(inlineKeyboard.InlineKeyboard, []telebot.InlineButton{btn})
+		}
+
+		// Send the list of options to the admin
+		return c.Send("Select the verification type to activate:", inlineKeyboard)
+	}
+}
+
 
 func checkUserAsAdminInGroup(userID, groupID int64) bool {
 	if storage.GroupSetupState[userID] == groupID {
