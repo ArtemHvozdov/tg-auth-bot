@@ -419,9 +419,30 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 							return
 						}
 
-						formattedParams, err := json.MarshalIndent(params, "", "  ")
+						// Get the active verification parameter
+						activeIndex := params.AcriveIndex
+						if activeIndex < 0 || activeIndex >= len(params.VerificationParams) {
+							log.Printf("Invalid active index for group '%s'.", storage.UserStore[userID].GroupName)
+							bot.Send(&telebot.User{ID: userID}, "The active verification parameter is not set correctly.")
+							return
+						}
+
+						activeParams := params.VerificationParams[activeIndex]
+						// formattedParams, err := json.MarshalIndent(activeParams, "", "  ")
+						// if err != nil {
+						// 	log.Printf("Failed to format active verification parameter: %v", err)
+						// 	return
+						// }
+
+						// Combine active parameter with type restriction
+						result := map[string]interface{}{
+							"activeVerificationParam": activeParams,
+							"typeRestriction":         typeRestriction,
+						}
+
+						formattedResult, err := json.MarshalIndent(result, "", "  ")
 						if err != nil {
-							log.Printf("Failed to format verification parameters: %v", err)
+							log.Printf("Failed to format result: %v", err)
 							return
 						}
 
@@ -442,7 +463,13 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 
 						defer os.Remove(fileName) // Remove the file after sending
 
-						bot.Send(&telebot.User{ID: userID}, fmt.Sprintf("Here are the current verification parameters:\n```\n%s\n```\n Type restriction new members: %s.\n", string(formattedParams), typeRestriction), &telebot.SendOptions{ParseMode: telebot.ModeMarkdown})
+						//bot.Send(&telebot.User{ID: userID}, fmt.Sprintf("Here are the current verification parameters:\n```\n%s\n```\n Type restriction new members: %s.\n", string(formattedParams), typeRestriction), &telebot.SendOptions{ParseMode: telebot.ModeMarkdown})
+
+						bot.Send(
+							&telebot.User{ID: userID},
+							fmt.Sprintf("Here is the current verification parameter being tested:\n```\n%s\n```\n", string(formattedResult)),
+							&telebot.SendOptions{ParseMode: telebot.ModeMarkdown},
+						)
 
 						time.Sleep(1*time.Second)
 
@@ -452,8 +479,14 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 							FileName: fileName,
 						}
 
-						// Send token file to user
-						bot.Send(&telebot.User{ID: userID}, file)
+						if _, err := bot.Send(&telebot.User{ID: userID}, file); err != nil {
+							log.Printf("Error sending file: %v", err)
+						} else {
+							// Remove the file after successfully sending it
+							if err := os.Remove(fileName); err != nil {
+								log.Printf("Error deleting file: %v", err)
+							}
+						}
 
 						time.Sleep(500*time.Millisecond)
 
