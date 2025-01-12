@@ -42,6 +42,8 @@ func StartBot(cfg config.Config) error {
 		{Text: "add_verification_params", Description: "Add verification parameters"},
 		{Text: "list_verification_params", Description: "List verification parameters"},
 		{Text: "set_active_verification_params", Description: "Set active verification parameters"},
+		{Text: "add_type_restriction", Description: "Add type restriction"},
+		{Text: "set_type_restriction", Description: "Set type restriction"},
 	})
 	if err != nil {
 		log.Printf("Failed to set bot commands: %v", err)
@@ -60,6 +62,8 @@ func StartBot(cfg config.Config) error {
 	bot.Handle("/add_verification_params", handlers.AddVerificationParamsHandler(bot))
 	bot.Handle("/list_verification_params", handlers.ListVerificationParamsHandler(bot))
 	bot.Handle("/set_active_verification_params", handlers.SetActiveVerificationParamsHandler(bot))
+	bot.Handle("/add_type_restriction", handlers.AddTypeRestrictionHandler(bot))
+	bot.Handle("/set_type_restriction", handlers.SetTypeRestrictionHandler(bot))
 		
 	messageTypes := []string{
 		telebot.OnText,

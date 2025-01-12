@@ -129,11 +129,39 @@ type VerificationParams struct {
 
 type GroupVerificationConfig struct {
 	VerificationParams []VerificationParams
-	AcriveIndex		int
+	ActiveIndex		int
+	RestrictionType string // block | delete
 }
 
 // Struct paramets: ID Group - auth parametrs
 var VerificationParamsMap = make(map[int64]GroupVerificationConfig)
+
+// Add restriction type to group
+func AddRestrictionType(groupID int64, restrictionType string) {
+	DataMutex.Lock()
+	defer DataMutex.Unlock()
+
+	groupConfig, exists := VerificationParamsMap[groupID]
+	if !exists {
+		log.Printf("Group %d not found in VerificationParamsMap", groupID)
+		return
+	}
+	
+	groupConfig.RestrictionType = restrictionType
+	VerificationParamsMap[groupID] = groupConfig
+}
+
+// Get restriction type from group
+func GetRestrictionType(groupID int64) string {
+	DataMutex.Lock()
+	defer DataMutex.Unlock()
+
+	groupConfig, exists := VerificationParamsMap[groupID]
+	if !exists {
+		return ""
+	}
+	return groupConfig.RestrictionType
+}
 
 // Admin User ID - Group ID
 var GroupSetupState = make(map[int64]int64)
@@ -158,25 +186,30 @@ func GetIdGroupFromGroupSetapState(userID int64) int64 {
 
 // RestrictionType - type of restriction
 // ID Chat Group -> Restriction Type ( block | delete )
-var RestrictionType = make(map[int64]string)
+//var RestrictionType = make(map[int64]string)
 
-func AddRestrictionType(groupID int64, restrictionType string) {
-	DataMutex.Lock()
-	defer DataMutex.Unlock()
+// func AddRestrictionType(groupID int64, restrictionType string) {
+// 	DataMutex.Lock()
+// 	defer DataMutex.Unlock()
 
-	RestrictionType[groupID] = restrictionType
-}
+// 	groupConfig, exists := VerificationParamsMap[groupID]
+// 	if !exists {
+// 		groupConfig = GroupVerificationConfig{}
+// 	}
+// 	groupConfig.RestrictionType = restrictionType
+// 	GroupConfigs[groupID] = groupConfig
+// }
 
-func GetRestrictionType(groupID int64) string {
-	DataMutex.Lock()
-	defer DataMutex.Unlock()
+// func GetRestrictionType(groupID int64) string {
+// 	DataMutex.Lock()
+// 	defer DataMutex.Unlock()
 
-	restrictionType, exists := RestrictionType[groupID]
-	if !exists {
-		return ""
-	}
-	return restrictionType
-}
+// 	restrictionType, exists := RestrictionType[groupID]
+// 	if !exists {
+// 		return ""
+// 	}
+// 	return restrictionType
+// }
 
 // VerifiedUsersList - list of verified users
 // Id Chat Group -> User Data 

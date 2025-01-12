@@ -204,7 +204,7 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 
 	configGroupParams := storage.VerificationParamsMap[userAuthGroupID]
 
-	params := configGroupParams.VerificationParams[configGroupParams.AcriveIndex]
+	params := configGroupParams.VerificationParams[configGroupParams.ActiveIndex]
 
 	typeVerification := params.Query["type"].(string)
 
