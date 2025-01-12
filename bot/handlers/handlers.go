@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 
 	//"strconv"
@@ -34,10 +35,7 @@ func isAdmin(bot *telebot.Bot, chatID int64, userID int64) bool {
 func StartHandler(bot *telebot.Bot) func(c telebot.Context) error {
     return func(c telebot.Context) error {
         userName := c.Sender().Username
-        // if c.Sender().LastName != "" {
-        //     userName += " " + c.Sender().Username
-        // }
-
+       
         msg := fmt.Sprintf(
             "Hello, %s!\n\nIf you want to be verified, run the command /verify.\nIf you want to configure the bot to verify participants, run the command /setup.",
             userName,
@@ -48,7 +46,7 @@ func StartHandler(bot *telebot.Bot) func(c telebot.Context) error {
 // /setup command - administrator initiates configuration
 func SetupHandler(bot *telebot.Bot) func(c telebot.Context) error {
 	return func(c telebot.Context) error {
-		// Шаг 1: Отправляем сообщение о необходимости добавить бота в группу с правами администратора
+		// Step 1: Send a message about the need to add the bot to the group with administrator rights
 		msg := "To set me up for verification in your group, please add me to the group as an administrator and call the /check_admin command in the group."
 		if err := c.Send(msg); err != nil {
 			log.Printf("Error sending setup message: %v", err)
@@ -61,6 +59,12 @@ func SetupHandler(bot *telebot.Bot) func(c telebot.Context) error {
 // /check_admin command - check administrator rights in a group and verify verification parameters
 func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 	return func(c telebot.Context) error {
+		// Check the type of chat
+		if c.Chat().Type == telebot.ChatPrivate {
+			// Send a message to the user indicating that this command is not available in private chats
+			return c.Send("This command can only be used in group or supergroup chats.")
+		}
+
 		chatID := c.Chat().ID // ID group chat (future: need rename this variable to groupID)
 		userID := c.Sender().ID // ID admin user (future: need rename this variable to adminID)
 		chatName := c.Chat().Title // Getting the name of the chat (group)
@@ -71,16 +75,10 @@ func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		log.Printf("User ID: %d, Chat ID: %d, Command received", userID, chatID)
 		log.Printf("User's name: %s %s (@%s)", c.Sender().FirstName, c.Sender().LastName, c.Sender().Username)
 
-		// // Schedule deletion of the message after 1 minute
-		// go func() {
-		// 	time.Sleep(1 * time.Minute)
-		// 	if err := bot.Delete(msg); err != nil {
-		// 		log.Printf("Error deleting message: %v", err)
-		// 	}
-		// }()
-
+		// Send a message to the user
 		msgContinueForAdmin, _ := bot.Send(&telebot.Chat{ID: chatID}, "Administrator, return to the private chat with me to continue configuring the settings")
 
+		// Delete the message after 1 minute
 		go func() {
 			time.Sleep(1 * time.Minute)
 			if err := bot.Delete(msgContinueForAdmin); err != nil {
@@ -148,69 +146,13 @@ func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 			return err
 		}
 
-		// Save parameters for restriction
-
-		// Create buttons ''Block'' and ''Delete''
-		btnBlock := telebot.InlineButton{
-			Text: "Block",
-			Unique: "block",
-		}
-		btnDelete := telebot.InlineButton{
-			Text: "Delete",
-			Unique: "delete",
-		}
-		// Create a keyboard with buttons
-		inlineKeys := [][]telebot.InlineButton{{btnBlock, btnDelete}}
-		keyboard := &telebot.ReplyMarkup{InlineKeyboard: inlineKeys}
-
-		
-		if _, err := bot.Send(&telebot.User{ID: userID}, "Select restriction type:", keyboard); err != nil {
-			log.Printf("Error sending keyboard: %v", err)
-			return err
-		}
-
-		bot.Handle(&btnBlock, func(c telebot.Context) error {
-			storage.AddRestrictionType(chatID, "block")
-			bot.Send(&telebot.User{ID: userID}, "Restriction type set to 'block'.")
-
-			log.Println(storage.RestrictionType[chatID])
-
+		time.Sleep(700*time.Millisecond)
 			// Ask for verification parameters
-			askVerificationParams(bot, userID)
-			return nil
-		})
-
-		bot.Handle(&btnDelete, func(c telebot.Context) error {
-			storage.AddRestrictionType(chatID, "delete")
-			bot.Send(&telebot.User{ID: userID}, "Restriction type set to 'delete'.")
-
-			// Ask for verification parameters
-			askVerificationParams(bot, userID)
-			return nil
-		})
+		bot.Send(&telebot.User{ID: userID}, "To add verification parameters, call the command\n /add_verification_params")
 
 		return nil
 	}
 }
-
-// askVerificationParams sends a request for verification parameters to the admin
-func askVerificationParams(bot *telebot.Bot, userID int64) {
-	bot.Send(&telebot.User{ID: userID}, "Send verification parameters in JSON format in this private chat. Example:\n\n"+
-		"{\n"+
-		"  \"circuitId\": \"AtomicQuerySigV2CircuitID\",\n"+
-		"  \"id\": 1,\n"+
-		"  \"query\": {\n"+
-		"    \"allowedIssuers\": [\"*\"],\n"+
-		"    \"context\": \"https://example.com/context\",\n"+
-		"    \"type\": \"ExampleType\",\n"+
-		"    \"credentialSubject\": {\n"+
-		"      \"birthday\": {\"$lt\": 20000101}\n"+
-		"    }\n"+
-		"  }\n"+
-		"}",
-	)
-}
-
 
 // A new user has joined the group
 func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
@@ -237,8 +179,10 @@ func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 			log.Println("New user:", newUser)
 
+			typeRestriction := storage.GetRestrictionType(c.Chat().ID)
+
 			// Restrict the user if the restriction type is "block"
-			if storage.RestrictionType[c.Chat().ID] == "block" {
+			if typeRestriction == "block" {
 				err := bot.Restrict(c.Chat(), &telebot.ChatMember{
 					User: &telebot.User{ID: member.ID},
 					Rights: telebot.Rights{
@@ -303,7 +247,23 @@ func VerifyHandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 		userGroupID := storage.UserStore[userID].GroupID
 
-		jsonData, _ := auth.GenerateAuthRequest(userID, storage.VerificationParamsMap[userGroupID])
+		// Fetch group configuration
+		groupConfig, exists := storage.VerificationParamsMap[userGroupID]
+		if !exists {
+			log.Printf("Verification parameters not found for group ID: %d", userGroupID)
+			return c.Send("Verification parameters are not configured for your group.")
+		}
+
+		// Check that the active index is valid
+		if groupConfig.ActiveIndex < 0 || groupConfig.ActiveIndex >= len(groupConfig.VerificationParams) {
+			log.Printf("Invalid active index for group ID: %d", userGroupID)
+			return c.Send("Verification configuration error. Please contact the group administrator.")
+		}
+
+		// Get active verification parameters
+		activeParams := groupConfig.VerificationParams[groupConfig.ActiveIndex]
+
+		jsonData, _ := auth.GenerateAuthRequest(userID, activeParams)
 
 		base64Data := base64.StdEncoding.EncodeToString(jsonData)
 
@@ -357,7 +317,7 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 			}
 
 			groupChatID := storage.UserStore[userID].GroupID
-			typeRestriction := storage.RestrictionType[groupChatID]
+			typeRestriction := storage.GetRestrictionType(groupChatID)
 
 			userIsAdminGroup := checkUserAsAdminInGroup(userID, groupChatID)
 
@@ -398,9 +358,25 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 							return
 						}
 
-						formattedParams, err := json.MarshalIndent(params, "", "  ")
+						// Get the active verification parameter
+						activeIndex := params.ActiveIndex
+						if activeIndex < 0 || activeIndex >= len(params.VerificationParams) {
+							log.Printf("Invalid active index for group '%s'.", storage.UserStore[userID].GroupName)
+							bot.Send(&telebot.User{ID: userID}, "The active verification parameter is not set correctly.")
+							return
+						}
+
+						activeParams := params.VerificationParams[activeIndex]
+						
+						// Combine active parameter with type restriction
+						result := map[string]interface{}{
+							"activeVerificationParam": activeParams,
+							"typeRestriction":         typeRestriction,
+						}
+
+						formattedResult, err := json.MarshalIndent(result, "", "  ")
 						if err != nil {
-							log.Printf("Failed to format verification parameters: %v", err)
+							log.Printf("Failed to format result: %v", err)
 							return
 						}
 
@@ -421,7 +397,11 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 
 						defer os.Remove(fileName) // Remove the file after sending
 
-						bot.Send(&telebot.User{ID: userID}, fmt.Sprintf("Here are the current verification parameters:\n```\n%s\n```\n Type restriction new members: %s.\n", string(formattedParams), typeRestriction), &telebot.SendOptions{ParseMode: telebot.ModeMarkdown})
+						bot.Send(
+							&telebot.User{ID: userID},
+							fmt.Sprintf("Here is the current verification parameter being tested:\n```\n%s\n```\n", string(formattedResult)),
+							&telebot.SendOptions{ParseMode: telebot.ModeMarkdown},
+						)
 
 						time.Sleep(1*time.Second)
 
@@ -431,8 +411,14 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 							FileName: fileName,
 						}
 
-						// Send token file to user
-						bot.Send(&telebot.User{ID: userID}, file)
+						if _, err := bot.Send(&telebot.User{ID: userID}, file); err != nil {
+							log.Printf("Error sending file: %v", err)
+						} else {
+							// Remove the file after successfully sending it
+							if err := os.Remove(fileName); err != nil {
+								log.Printf("Error deleting file: %v", err)
+							}
+						}
 
 						time.Sleep(500*time.Millisecond)
 
@@ -476,7 +462,7 @@ func UnifiedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 func handleGroupMessage(bot *telebot.Bot, c telebot.Context, userID int64) error {
 	chatGroupId := c.Chat().ID
-	typeRestriction := storage.RestrictionType[chatGroupId]
+	typeRestriction := storage.GetRestrictionType(chatGroupId)
 
 	if typeRestriction == "delete" {
 		userData, exists := storage.GetUser(userID)
@@ -529,18 +515,229 @@ func handlePrivateMessage(bot *telebot.Bot, c telebot.Context) error {
 		log.Println("JSON does not contain all required fields.")
 		bot.Send(c.Sender(), "Missing required fields in JSON. Please include 'circuitId', 'id', and 'query'.")
 		return nil
-			}
+	}
 
-    // Save parameters to storage
-	storage.VerificationParamsMap[groupChatID] = params
+	// Fetch or initialize group configuration
+	groupConfig, exists := storage.VerificationParamsMap[groupChatID]
+	if !exists {
+		groupConfig = storage.GroupVerificationConfig{
+			VerificationParams: []storage.VerificationParams{},
+			ActiveIndex:        -1, // Initially, no parameter is active
+		}
+	}
+	
+	// Adding a new verification parameter
+	groupConfig.VerificationParams = append(groupConfig.VerificationParams, params)
+
+	// Save parameters to storage
+	storage.VerificationParamsMap[groupChatID] = groupConfig
 	log.Printf("Verification parameters set for group '%s': %+v", groupChatName, params)
+	bot.Send(c.Sender(), "JSON verification parameters have been add for the group.")
 
-	// Notify admin about successful setup
-	bot.Send(c.Sender(), fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", groupChatName))
+	// Send a message depending on the number of parameters
+	if groupConfig.RestrictionType == "" {
+		time.Sleep(700*time.Millisecond)
+
+		bot.Send(c.Sender(), "To set restriction parameters for new subscribers, call the command\n /add_type_restriction")
+	} else {
+		bot.Send(c.Sender(), "Another verification parameter has been added.")
+	}
+	
 	return nil
 		
 }
 
+// Handler for /add_type_restriction
+func AddTypeRestrictionHandler(bot *telebot.Bot) func(c telebot.Context) error {
+	return func(c telebot.Context) error {
+		userID := c.Sender().ID
+
+		// Check if the group is set up for this user
+		targetChatGroupID, exists := storage.GroupSetupState[userID]
+		if !exists {
+			return c.Send("You need to specify a group for restriction setup.")
+		}
+
+		// Get the group chat by ID
+		chat, err := bot.ChatByID(targetChatGroupID)
+		if err != nil {
+			log.Printf("Error fetching chat: %v", err)
+			return c.Send("Failed to fetch chat information.")
+		}
+		groupChatName := chat.Title
+
+		// Check if the user is an administrator of the group
+		if !isAdmin(bot, targetChatGroupID, userID) {
+			return c.Send("You are not an administrator in this group.")
+		}
+
+		// Create buttons ''Block'' and ''Delete''
+		btnBlock := telebot.InlineButton{
+			Text: "Block",
+			Unique: "block",
+		}
+		btnDelete := telebot.InlineButton{
+			Text: "Delete",
+			Unique: "delete",
+		}
+		// Create a keyboard with buttons
+		inlineKeys := [][]telebot.InlineButton{{btnBlock, btnDelete}}
+		keyboard := &telebot.ReplyMarkup{InlineKeyboard: inlineKeys}
+
+		if _, err := bot.Send(c.Sender(), "Select restriction type:", keyboard); err != nil {
+			log.Printf("Error sending keyboard: %v", err)
+			return err
+		}
+
+		// Fetch or initialize group configuration
+		groupConfig, exists := storage.VerificationParamsMap[targetChatGroupID]
+		if !exists {
+			groupConfig = storage.GroupVerificationConfig{
+				VerificationParams: []storage.VerificationParams{},
+				ActiveIndex:        -1, // Initially, no parameter is active
+			}
+		}
+
+		// Check if this is the first verification parameter
+		isFirstParameter := len(groupConfig.VerificationParams) == 1
+
+		// Set ActiveIndex to 0 if this is the first parameter
+		if isFirstParameter {
+			groupConfig.ActiveIndex = 0
+			storage.VerificationParamsMap[targetChatGroupID] = groupConfig
+		}
+
+		bot.Handle(&btnBlock, func(c telebot.Context) error {
+			storage.AddRestrictionType(targetChatGroupID, "block")
+			bot.Send(c.Sender(), "Restriction type set to 'block'.")
+
+			time.Sleep(900*time.Millisecond)
+
+			// Send a message depending on the number of parameters
+			if isFirstParameter {
+				bot.Send(c.Sender(), fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", groupChatName))
+			} else {
+				bot.Send(c.Sender(), "Additional verification parameters have been added.")
+			}
+			return nil
+		})
+
+		bot.Handle(&btnDelete, func(c telebot.Context) error {
+			storage.AddRestrictionType(targetChatGroupID, "delete")
+			bot.Send(c.Sender(), "Restriction type set to 'delete'.")
+
+			time.Sleep(900*time.Millisecond)
+
+			// Send a message depending on the number of parameters
+			if isFirstParameter {
+				bot.Send(c.Sender(), fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", groupChatName))
+			} else {
+				bot.Send(c.Sender(), "Additional verification parameters have been added.")
+			}
+
+			return nil
+		})
+
+		return nil
+	}
+}
+
+// Handler for /set_type_restriction
+func SetTypeRestrictionHandler(bot *telebot.Bot) func(c telebot.Context) error {
+	return func(c telebot.Context) error {
+		userID := c.Sender().ID
+
+		// Check if the group is set up for this user
+		targetChatGroupID, exists := storage.GroupSetupState[userID]
+		if !exists {
+			return c.Send("You need to specify a group for restriction setup.")
+		}
+
+		// Get the group chat by ID
+		chat, err := bot.ChatByID(targetChatGroupID)
+		if err != nil {
+			log.Printf("Error fetching chat: %v", err)
+			return c.Send("Failed to fetch chat information.")
+		}
+		groupChatName := chat.Title
+
+		// Check if the user is an administrator of the group
+		if !isAdmin(bot, targetChatGroupID, userID) {
+			return c.Send("You are not an administrator in this group.")
+		}
+
+		// Fetch current restriction type
+		currentRestriction := storage.GetRestrictionType(targetChatGroupID)
+		if currentRestriction == "" {
+			currentRestriction = "Not set"
+		}
+
+		// Update button text based on the current restriction
+		blockText := "Block"
+		deleteText := "Delete"
+		if currentRestriction == "block" {
+			blockText += " (active)"
+		} else if currentRestriction == "delete" {
+			deleteText += " (active)"
+		}
+
+		// Create buttons
+		btnBlock := telebot.InlineButton{
+			Text:   blockText,
+			Unique: fmt.Sprintf("change_block_%d", targetChatGroupID), // Unique ID per group
+		}
+		btnDelete := telebot.InlineButton{
+			Text:   deleteText,
+			Unique: fmt.Sprintf("change_delete_%d", targetChatGroupID), // Unique ID per group
+		}
+
+		// Create a keyboard with buttons
+		inlineKeys := [][]telebot.InlineButton{{btnBlock, btnDelete}}
+		keyboard := &telebot.ReplyMarkup{InlineKeyboard: inlineKeys}
+
+		// Send current restriction type and options to change it
+		if _, err := bot.Send(c.Sender(), fmt.Sprintf(
+			"Current restriction type for the group '%s': %s.\n\nSelect a new restriction type:",
+			groupChatName, currentRestriction), keyboard); err != nil {
+			log.Printf("Error sending keyboard: %v", err)
+			return err
+		}
+
+		// Define button handlers
+		bot.Handle(&btnBlock, func(c telebot.Context) error {
+			// Check if the current restriction type is already "block"
+			if currentRestriction == "block" {
+				_, err := bot.Send(c.Sender(), "The restriction type is already set to 'Block'.")
+				return	err
+			}
+
+			// Update the restriction type
+			storage.AddRestrictionType(targetChatGroupID, "block")
+
+			// Send a confirmation message without deleting or editing the keyboard message
+			_, err := bot.Send(c.Sender(), fmt.Sprintf("Restriction type for group '%s' has been changed to 'block'.", groupChatName))
+			return err
+		})
+
+		bot.Handle(&btnDelete, func(c telebot.Context) error {
+			// Check if the current restriction type is already "delete"
+			if currentRestriction == "delete" {
+				_, err := bot.Send(c.Sender(), "The restriction type is already set to 'Block'.")
+				return err
+			}
+
+			// Update the restriction type
+			storage.AddRestrictionType(targetChatGroupID, "delete")
+
+			// Send a confirmation message without deleting or editing the keyboard message
+			_, err := bot.Send(c.Sender(), fmt.Sprintf("Restriction type for group '%s' has been changed to 'delete'.", groupChatName))
+			return err
+		})
+
+		return nil
+	}
+}
+ 
 // Handler for /test_verification
 func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 	return func(c telebot.Context) error {
@@ -581,11 +778,26 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 		storage.AddOrUpdateUser(userID, adminUser)
 
-		// Check if verification parameters are set for the group
-		params, exists := storage.VerificationParamsMap[groupChatID]
+		// Fetch group configuration
+		groupConfig, exists := storage.VerificationParamsMap[groupChatID]
 		if !exists {
-			//storage.RemoveUser(userID) // Remove the test record if parameters are not set
-			return c.Send("Verification parameters have not been set for this group.")
+			log.Printf("Verification parameters not found for group ID: %d", groupChatID)
+			return c.Send("Verification parameters are not configured for your group.")
+		}
+
+		// Check that the active index is valid
+		if groupConfig.ActiveIndex < 0 || groupConfig.ActiveIndex >= len(groupConfig.VerificationParams) {
+			log.Printf("Invalid active index for group ID: %d", groupChatID)
+			return c.Send("Verification configuration error. Please contact the group administrator.")
+		}
+
+		// Get active verification parameters
+		params := groupConfig.VerificationParams[groupConfig.ActiveIndex]
+
+		// Determine the type of current verification
+		verificationType := "unknown"
+		if queryType, ok := params.Query["type"].(string); ok {
+			verificationType = queryType
 		}
 
 		// Generate a test request for verification
@@ -599,7 +811,7 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		deepLink := fmt.Sprintf("https://wallet.privado.id/#i_m=%s", base64Data)
 
 		btn := telebot.InlineButton{
-			Text: "Test verify",
+			Text: fmt.Sprintf("Test verify (%s)", verificationType),
 			URL:  deepLink,
 		}
 
@@ -663,17 +875,200 @@ func VerifiedUsersListHeandler(bot *telebot.Bot) func(c telebot.Context) error {
 		if !groupExists || len(verifiedUsers) == 0 {
 			return c.Send(fmt.Sprintf("No verified users in the group '%s'.", targetChatGroupName))
 		}
-
+		
 		// Forming a message with a list of verified users
 		msg := fmt.Sprintf("Verified users in the group '%s':\n\n", targetChatGroupName)
 		for _, verifiedUser := range verifiedUsers {
-			msg += fmt.Sprintf("@%s - %s\n", verifiedUser.User.UserName, verifiedUser.TypeVerification)
+			// Combine all verification types into a comma-separated string
+			types := strings.Join(verifiedUser.TypesVerification, ", ")
+			msg += fmt.Sprintf("@%s - %s\n", verifiedUser.User.UserName, types)
 		}
 
 		// Send a message
 		return c.Send(msg)
 	}
 }
+
+// AddVerificationParamsHandler handles adding verification parameters in a single step /add_verification_params
+func AddVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) error {
+    return func(c telebot.Context) error {
+        userID := c.Sender().ID
+
+        // Check if the user is linked to a group setup
+        groupChatID := storage.GroupSetupState[userID]
+        if groupChatID == 0 {
+            log.Println("Group not set up for user:", userID)
+            return c.Send("You are not associated with any group. Use /setup first.")
+        }
+
+        groupChat, _ := bot.ChatByID(groupChatID)
+        if groupChat == nil {
+            log.Printf("Failed to fetch group chat by ID: %d", groupChatID)
+            return c.Send("Failed to fetch the group chat. Please try again.")
+        }
+
+        // Request verification parameters
+        exampleJSON := "{\n" +
+            "  \"circuitId\": \"AtomicQuerySigV2CircuitID\",\n" +
+            "  \"id\": 1,\n" +
+            "  \"query\": {\n" +
+            "    \"allowedIssuers\": [\"*\"],\n" +
+            "    \"context\": \"https://example.com/context\",\n" +
+            "    \"type\": \"ExampleType\",\n" +
+            "    \"credentialSubject\": {\n" +
+            "      \"birthday\": {\"$lt\": 20000101}\n" +
+            "    }\n" +
+            "  }\n" +
+            "}"
+        return c.Send("Please send verification parameters in JSON format. Example:\n\n" + exampleJSON)
+    }
+}
+
+// ListVerificationParamsHandler displays the list of added verification parameters /list_verification_params
+func ListVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) error {
+    return func(c telebot.Context) error {
+        userID := c.Sender().ID
+
+        // Check if the user is linked to a group setup
+        groupChatID := storage.GroupSetupState[userID]
+        if groupChatID == 0 {
+            log.Println("Group not set up for user:", userID)
+            return c.Send("You are not associated with any group. Use /setup first.")
+        }
+
+        // Fetch group configuration
+        groupConfig, exists := storage.VerificationParamsMap[groupChatID]
+        if !exists || len(groupConfig.VerificationParams) == 0 {
+            log.Println("No verification parameters found for group:", groupChatID)
+            return c.Send("No verification parameters have been added yet. Use /add_verification_params to add one.")
+        }
+
+        // Fetch restriction type
+        restrictionType := groupConfig.RestrictionType
+        if restrictionType == "" {
+            restrictionType = "Not set"
+        }
+
+        // Build the list of verification parameters
+        var response strings.Builder
+        response.WriteString("Verification parameters for the group:\n\n")
+        for i, param := range groupConfig.VerificationParams {
+            activeMarker := ""
+            if i == groupConfig.ActiveIndex {
+                activeMarker = " (active)"
+            }
+
+            // Extract the "type" field from the "query"
+            queryType := "unknown" // Default value in case "type" is missing
+            if query, ok := param.Query["type"]; ok {
+                if queryStr, ok := query.(string); ok {
+                    queryType = queryStr
+                }
+            }
+
+            response.WriteString(fmt.Sprintf("%d. Type: %s%s\n", i+1, queryType, activeMarker))
+        }
+
+        // Add the restriction type information
+        response.WriteString("\nRestriction type for new members: ")
+        response.WriteString(restrictionType)
+
+        // Send the list to the admin
+        return c.Send(response.String())
+    }
+}
+
+// Handler to switch active verification parameters /set_active_verification_params
+func SetActiveVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) error {
+	return func(c telebot.Context) error {
+		userID := c.Sender().ID
+		var groupChatID int64
+
+		// Determine where the handler was called: in a group or in a private chat
+		if c.Chat().Type == telebot.ChatPrivate {
+			// Check if there is a saved group for this administrator
+			if groupID, exists := storage.GroupSetupState[userID]; exists {
+				groupChatID = groupID
+			} else {
+				return c.Send("You need to specify a group for verification setup.")
+			}
+		} else {
+			groupChatID = c.Chat().ID
+		}
+
+		// Check if the user is an administrator of the group
+		if !isAdmin(bot, groupChatID, userID) {
+			return c.Send("You are not an administrator in this group.")
+		}
+
+		// Fetch the group's verification parameters
+		groupConfig, exists := storage.VerificationParamsMap[groupChatID]
+		if !exists || len(groupConfig.VerificationParams) == 0 {
+			return c.Send("No verification parameters have been set for this group.")
+		}
+
+		// If there is only one verification parameter, notify the admin
+		if len(groupConfig.VerificationParams) == 1 {
+			return c.Send("Only one verification type is available. Switching is not possible.")
+		}
+
+		// Generate buttons for all verification types
+		inlineKeyboard := &telebot.ReplyMarkup{}
+		for i, param := range groupConfig.VerificationParams {
+			text := fmt.Sprintf("%d. %s", i+1, param.Query["type"])
+			if i == groupConfig.ActiveIndex {
+				text += " (active)"
+			}
+
+			btn := telebot.InlineButton{
+				Text:   text,
+				Unique: fmt.Sprintf("switch_param_%d", i),
+			}
+			// Register callback handler for the button
+			bot.Handle(&btn, func(c telebot.Context) error {
+				// Handle button click
+				index := i
+
+				// Validate the index
+				if index < 0 || index >= len(groupConfig.VerificationParams) {
+					return c.Respond(&telebot.CallbackResponse{
+						Text: "Invalid selection.",
+					})
+				}
+
+				// If the selected index is already active, notify the admin
+				if groupConfig.ActiveIndex == index {
+					_, err := bot.Send(c.Sender(), fmt.Sprintf(
+						"The selected verification type '%s' is already active.",
+						groupConfig.VerificationParams[index].Query["type"],
+					))
+					return err
+				}
+
+				// Update the active index
+				groupConfig.ActiveIndex = index
+				storage.VerificationParamsMap[groupChatID] = groupConfig
+
+				// Notify the admin of the change
+				typeStr, ok := groupConfig.VerificationParams[index].Query["type"].(string)
+				if !ok {
+					typeStr = "Unknown type"
+				}
+
+				bot.Send(c.Sender(), fmt.Sprintf("Verification type '%s' has been set as active.", typeStr))
+
+				// Respond to the callback to clear the loading state on the button
+				return c.Respond()
+			})
+
+			inlineKeyboard.InlineKeyboard = append(inlineKeyboard.InlineKeyboard, []telebot.InlineButton{btn})
+		}
+
+		// Send the list of options to the admin
+		return c.Send("Select the verification type to activate:", inlineKeyboard)
+	}
+}
+
 
 func checkUserAsAdminInGroup(userID, groupID int64) bool {
 	if storage.GroupSetupState[userID] == groupID {

@@ -127,8 +127,41 @@ type VerificationParams struct {
 	Query            map[string]interface{} `json:"query"`
 }
 
+type GroupVerificationConfig struct {
+	VerificationParams []VerificationParams
+	ActiveIndex		int
+	RestrictionType string // block | delete
+}
+
 // Struct paramets: ID Group - auth parametrs
-var VerificationParamsMap = make(map[int64]VerificationParams)
+var VerificationParamsMap = make(map[int64]GroupVerificationConfig)
+
+// Add restriction type to group
+func AddRestrictionType(groupID int64, restrictionType string) {
+	DataMutex.Lock()
+	defer DataMutex.Unlock()
+
+	groupConfig, exists := VerificationParamsMap[groupID]
+	if !exists {
+		log.Printf("Group %d not found in VerificationParamsMap", groupID)
+		return
+	}
+	
+	groupConfig.RestrictionType = restrictionType
+	VerificationParamsMap[groupID] = groupConfig
+}
+
+// Get restriction type from group
+func GetRestrictionType(groupID int64) string {
+	DataMutex.Lock()
+	defer DataMutex.Unlock()
+
+	groupConfig, exists := VerificationParamsMap[groupID]
+	if !exists {
+		return ""
+	}
+	return groupConfig.RestrictionType
+}
 
 // Admin User ID - Group ID
 var GroupSetupState = make(map[int64]int64)
@@ -151,28 +184,6 @@ func GetIdGroupFromGroupSetapState(userID int64) int64 {
 	return groupID
 }
 
-// RestrictionType - type of restriction
-// ID Chat Group -> Restriction Type ( block | delete )
-var RestrictionType = make(map[int64]string)
-
-func AddRestrictionType(groupID int64, restrictionType string) {
-	DataMutex.Lock()
-	defer DataMutex.Unlock()
-
-	RestrictionType[groupID] = restrictionType
-}
-
-func GetRestrictionType(groupID int64) string {
-	DataMutex.Lock()
-	defer DataMutex.Unlock()
-
-	restrictionType, exists := RestrictionType[groupID]
-	if !exists {
-		return ""
-	}
-	return restrictionType
-}
-
 // VerifiedUsersList - list of verified users
 // Id Chat Group -> User Data 
 var VerifiedUsersList = make(map[int64][]VerifiedUser)
@@ -186,7 +197,7 @@ type User struct {
 // User data
 type VerifiedUser struct {
 	User User
-	TypeVerification string
+	TypesVerification []string
 	AuthToken string
 }
 
@@ -200,15 +211,37 @@ func AddVerifiedUser(groupID int64, userID int64, userName string, VerifiedToken
 		UserName: userName,
 	}
 
-	// Create a record for the verified user
-	verifiedUser := VerifiedUser{
-		User:            user,
-		TypeVerification: typeVerification,
-		AuthToken:        authToken,
+	// Check if the group exists in VerifiedUsersList
+	users, exists := VerifiedUsersList[groupID]
+	if !exists {
+		// If the group does not exist, create a new list and add the user
+		verifiedUser := VerifiedUser{
+			User:             user,
+			TypesVerification: []string{typeVerification},
+			AuthToken:         authToken,
+		}
+		VerifiedUsersList[groupID] = []VerifiedUser{verifiedUser}
+		return
 	}
 
-	// Add a new verified user to the group's list
-	VerifiedUsersList[groupID] = append(VerifiedUsersList[groupID], verifiedUser)
+	// Check if the user already exists in the group's list
+	for i, existingUser := range users {
+		if existingUser.User.ID == userID {
+			// If the user exists, update the verification types and auth token
+			existingUser.TypesVerification = appendIfNotExists(existingUser.TypesVerification, typeVerification)
+			existingUser.AuthToken = authToken
+			VerifiedUsersList[groupID][i] = existingUser
+			return
+		}
+	}
+
+	// If the user does not exist in the group's list, add them
+	verifiedUser := VerifiedUser{
+		User:             user,
+		TypesVerification: []string{typeVerification},
+		AuthToken:         authToken,
+	}
+	VerifiedUsersList[groupID] = append(users, verifiedUser)
 }
 
 // RemoveVerifiedUser removes a user from VerifiedUsersList by group ID and user ID
@@ -232,10 +265,10 @@ func RemoveVerifiedUser(groupID int64, userID int64)  {
 		}
 	}
 
-	// If the user is not found, return false
+	// If the user is not found, return
 	if index == -1 {
 		log.Printf("User %d not found in group %d", userID, groupID)
-		return 
+		return
 	}
 
 	// Remove the user from the list
@@ -245,4 +278,14 @@ func RemoveVerifiedUser(groupID int64, userID int64)  {
 	if len(VerifiedUsersList[groupID]) == 0 {
 		delete(VerifiedUsersList, groupID)
 	}
+}
+
+// Helper function to append a string to a slice if it doesn't already exist
+func appendIfNotExists(slice []string, item string) []string {
+	for _, existingItem := range slice {
+		if existingItem == item {
+			return slice
+		}
+	}
+	return append(slice, item)
 }
