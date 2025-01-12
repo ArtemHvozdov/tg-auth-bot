@@ -224,7 +224,7 @@ type User struct {
 // User data
 type VerifiedUser struct {
 	User User
-	TypeVerification string
+	TypesVerification []string
 	AuthToken string
 }
 
@@ -238,15 +238,37 @@ func AddVerifiedUser(groupID int64, userID int64, userName string, VerifiedToken
 		UserName: userName,
 	}
 
-	// Create a record for the verified user
-	verifiedUser := VerifiedUser{
-		User:            user,
-		TypeVerification: typeVerification,
-		AuthToken:        authToken,
+	// Check if the group exists in VerifiedUsersList
+	users, exists := VerifiedUsersList[groupID]
+	if !exists {
+		// If the group does not exist, create a new list and add the user
+		verifiedUser := VerifiedUser{
+			User:             user,
+			TypesVerification: []string{typeVerification},
+			AuthToken:         authToken,
+		}
+		VerifiedUsersList[groupID] = []VerifiedUser{verifiedUser}
+		return
 	}
 
-	// Add a new verified user to the group's list
-	VerifiedUsersList[groupID] = append(VerifiedUsersList[groupID], verifiedUser)
+	// Check if the user already exists in the group's list
+	for i, existingUser := range users {
+		if existingUser.User.ID == userID {
+			// If the user exists, update the verification types and auth token
+			existingUser.TypesVerification = appendIfNotExists(existingUser.TypesVerification, typeVerification)
+			existingUser.AuthToken = authToken
+			VerifiedUsersList[groupID][i] = existingUser
+			return
+		}
+	}
+
+	// If the user does not exist in the group's list, add them
+	verifiedUser := VerifiedUser{
+		User:             user,
+		TypesVerification: []string{typeVerification},
+		AuthToken:         authToken,
+	}
+	VerifiedUsersList[groupID] = append(users, verifiedUser)
 }
 
 // RemoveVerifiedUser removes a user from VerifiedUsersList by group ID and user ID
@@ -270,10 +292,10 @@ func RemoveVerifiedUser(groupID int64, userID int64)  {
 		}
 	}
 
-	// If the user is not found, return false
+	// If the user is not found, return
 	if index == -1 {
 		log.Printf("User %d not found in group %d", userID, groupID)
-		return 
+		return
 	}
 
 	// Remove the user from the list
@@ -283,4 +305,14 @@ func RemoveVerifiedUser(groupID int64, userID int64)  {
 	if len(VerifiedUsersList[groupID]) == 0 {
 		delete(VerifiedUsersList, groupID)
 	}
+}
+
+// Helper function to append a string to a slice if it doesn't already exist
+func appendIfNotExists(slice []string, item string) []string {
+	for _, existingItem := range slice {
+		if existingItem == item {
+			return slice
+		}
+	}
+	return append(slice, item)
 }
