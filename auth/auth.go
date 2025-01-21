@@ -25,7 +25,7 @@ import (
 
 // LoadConfig loads the configuration
 // go func() {
-// 	cfg = config.LoadConfig()
+var	cfg = config.LoadConfig()
 // }
 
 const VerificationKeyPath = "verification_key.json"
@@ -49,10 +49,10 @@ var requestMap = make(map[string]AuthRequestData)
 
 // GenerateAuthRequest generates a new authentication request and returns it as a JSON object
 func GenerateAuthRequest(userID int64, params storage.VerificationParams) ([]byte, error) {
-	var cfg config.Config
-	go func() {
-		cfg = config.LoadConfig()
-	}
+	// var cfg config.Config
+	// go func() {
+	// 	cfg = config.LoadConfig()
+	// }
 	//rURL := "https://adf7-78-137-61-62.ngrok-free.app" // Updatesd with your actual URL // Updatesd with your actual URL
 	rURL := cfg.NgrokURL
 	sessionID := "1"                                     // Use unique session IDs in production
