@@ -181,6 +181,9 @@ func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 			typeRestriction := storage.GetRestrictionType(c.Chat().ID)
 
+			log.Println("New user handler")
+			log.Println("Type restriction:", typeRestriction)
+
 			// Restrict the user if the restriction type is "block"
 			if typeRestriction == "block" {
 				err := bot.Restrict(c.Chat(), &telebot.ChatMember{
@@ -460,11 +463,13 @@ func UnifiedHandler(bot *telebot.Bot) func(c telebot.Context) error {
     }
 }
 
+// Handle group messages
 func handleGroupMessage(bot *telebot.Bot, c telebot.Context, userID int64) error {
 	chatGroupId := c.Chat().ID
 	typeRestriction := storage.GetRestrictionType(chatGroupId)
 
 	if typeRestriction == "delete" {
+		log.Println("Handle group message, if type == delete")
 		userData, exists := storage.GetUser(userID)
 		if !exists || userData.IsPending {
 			// Delete the user's message
@@ -536,7 +541,7 @@ func handlePrivateMessage(bot *telebot.Bot, c telebot.Context) error {
 
 	// Send a message depending on the number of parameters
 	if groupConfig.RestrictionType == "" {
-		time.Sleep(700*time.Millisecond)
+		time.Sleep(200*time.Millisecond)
 
 		// bot.Send(c.Sender(), "To set restriction parameters for new subscribers, call the command\n /add_type_restriction")
 		bot.Send(c.Sender(), "To set restriction parameters for new subscribers")
@@ -590,6 +595,10 @@ func AddRestrictionTypeFunc(bot *telebot.Bot, c telebot.Context, groupChatID int
         storage.AddRestrictionType(groupChatID, "block")
         c.Send("Restriction type set to 'block'.")
 
+		// Logs paprams for the group
+		log.Println("Function add restriction type")
+		log.Println("Group params:", storage.VerificationParamsMap[groupChatID])
+
         // Send a success message
         if isFirstParameter {
             c.Send(fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", groupChatName))
@@ -603,6 +612,10 @@ func AddRestrictionTypeFunc(bot *telebot.Bot, c telebot.Context, groupChatID int
         storage.AddRestrictionType(groupChatID, "delete")
         c.Send("Restriction type set to 'delete'.")
 
+		// Logs paprams for the group
+		log.Println("Function add restriction type")
+		log.Println("Group params:", storage.VerificationParamsMap[groupChatID])
+
         // Send a success message
         if isFirstParameter {
             c.Send(fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", groupChatName))
@@ -613,101 +626,6 @@ func AddRestrictionTypeFunc(bot *telebot.Bot, c telebot.Context, groupChatID int
     })
 
     return nil
-}
-
-// Handler for /add_type_restriction
-func AddTypeRestrictionHandler(bot *telebot.Bot) func(c telebot.Context) error {
-	return func(c telebot.Context) error {
-		userID := c.Sender().ID
-
-		// Check if the group is set up for this user
-		targetChatGroupID, exists := storage.GroupSetupState[userID]
-		if !exists {
-			return c.Send("You need to specify a group for restriction setup.")
-		}
-
-		// Get the group chat by ID
-		chat, err := bot.ChatByID(targetChatGroupID)
-		if err != nil {
-			log.Printf("Error fetching chat: %v", err)
-			return c.Send("Failed to fetch chat information.")
-		}
-		groupChatName := chat.Title
-
-		// Check if the user is an administrator of the group
-		if !isAdmin(bot, targetChatGroupID, userID) {
-			return c.Send("You are not an administrator in this group.")
-		}
-
-		// Create buttons ''Block'' and ''Delete''
-		btnBlock := telebot.InlineButton{
-			Text: "Block",
-			Unique: "block",
-		}
-		btnDelete := telebot.InlineButton{
-			Text: "Delete",
-			Unique: "delete",
-		}
-		// Create a keyboard with buttons
-		inlineKeys := [][]telebot.InlineButton{{btnBlock, btnDelete}}
-		keyboard := &telebot.ReplyMarkup{InlineKeyboard: inlineKeys}
-
-		if _, err := bot.Send(c.Sender(), "Select restriction type:", keyboard); err != nil {
-			log.Printf("Error sending keyboard: %v", err)
-			return err
-		}
-
-		// Fetch or initialize group configuration
-		groupConfig, exists := storage.VerificationParamsMap[targetChatGroupID]
-		if !exists {
-			groupConfig = storage.GroupVerificationConfig{
-				VerificationParams: []storage.VerificationParams{},
-				ActiveIndex:        -1, // Initially, no parameter is active
-			}
-		}
-
-		// Check if this is the first verification parameter
-		isFirstParameter := len(groupConfig.VerificationParams) == 1
-
-		// Set ActiveIndex to 0 if this is the first parameter
-		if isFirstParameter {
-			groupConfig.ActiveIndex = 0
-			storage.VerificationParamsMap[targetChatGroupID] = groupConfig
-		}
-
-		bot.Handle(&btnBlock, func(c telebot.Context) error {
-			storage.AddRestrictionType(targetChatGroupID, "block")
-			bot.Send(c.Sender(), "Restriction type set to 'block'.")
-
-			time.Sleep(900*time.Millisecond)
-
-			// Send a message depending on the number of parameters
-			if isFirstParameter {
-				bot.Send(c.Sender(), fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", groupChatName))
-			} else {
-				bot.Send(c.Sender(), "Additional verification parameters have been added.")
-			}
-			return nil
-		})
-
-		bot.Handle(&btnDelete, func(c telebot.Context) error {
-			storage.AddRestrictionType(targetChatGroupID, "delete")
-			bot.Send(c.Sender(), "Restriction type set to 'delete'.")
-
-			time.Sleep(900*time.Millisecond)
-
-			// Send a message depending on the number of parameters
-			if isFirstParameter {
-				bot.Send(c.Sender(), fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", groupChatName))
-			} else {
-				bot.Send(c.Sender(), "Additional verification parameters have been added.")
-			}
-
-			return nil
-		})
-
-		return nil
-	}
 }
 
 // Handler for /set_type_restriction
@@ -781,6 +699,10 @@ func SetTypeRestrictionHandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 			// Update the restriction type
 			storage.AddRestrictionType(targetChatGroupID, "block")
+			
+			// Logs paprams for the group durin change restriction type
+			log.Println("Function set restriction type")
+			log.Println("Group params:", storage.VerificationParamsMap[targetChatGroupID])
 
 			// Send a confirmation message without deleting or editing the keyboard message
 			_, err := bot.Send(c.Sender(), fmt.Sprintf("Restriction type for group '%s' has been changed to 'block'.", groupChatName))
@@ -796,6 +718,10 @@ func SetTypeRestrictionHandler(bot *telebot.Bot) func(c telebot.Context) error {
 
 			// Update the restriction type
 			storage.AddRestrictionType(targetChatGroupID, "delete")
+
+			// Logs paprams for the group durin change restriction type
+			log.Println("Function set restriction type")
+			log.Println("Group params:", storage.VerificationParamsMap[targetChatGroupID])
 
 			// Send a confirmation message without deleting or editing the keyboard message
 			_, err := bot.Send(c.Sender(), fmt.Sprintf("Restriction type for group '%s' has been changed to 'delete'.", groupChatName))
@@ -992,8 +918,8 @@ func AddVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) erro
     }
 }
 
-// Handler deleting all verification parameters for a group /delete_verification_params
-func DeleteVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) error {
+// Handler deleting all verification parameters for a group /delete_all_verification_params
+func DeleteAllVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) error {
 	return func(c telebot.Context) error {
 		userID := c.Sender().ID
 
