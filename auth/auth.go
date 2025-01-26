@@ -49,11 +49,6 @@ var requestMap = make(map[string]AuthRequestData)
 
 // GenerateAuthRequest generates a new authentication request and returns it as a JSON object
 func GenerateAuthRequest(userID int64, params storage.VerificationParams) ([]byte, error) {
-	// var cfg config.Config
-	// go func() {
-	// 	cfg = config.LoadConfig()
-	// }
-	//rURL := "https://adf7-78-137-61-62.ngrok-free.app" // Updatesd with your actual URL // Updatesd with your actual URL
 	rURL := cfg.NgrokURL
 	sessionID := "1"                                     // Use unique session IDs in production
 	//sessionID := strconv.Itoa(int(time.Now().UnixNano()))
@@ -131,7 +126,7 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 	tokenStr := string(tokenBytes)
 	log.Println("Token string:", tokenStr)
 
-	//ethURL := "https://polygon-amoy.infura.io/v3/a1e81bcaca104bf9ad54f4e88b4c3554"
+	
 	ethURL := fmt.Sprintf("https://polygon-amoy.infura.io/v3/%s", cfg.InfuraKey)
 	log.Println("ETH URL:", ethURL)
 	contractAddress := "0x1a4cC30f2aA0377b0c3bc9848766D90cb4404124"
