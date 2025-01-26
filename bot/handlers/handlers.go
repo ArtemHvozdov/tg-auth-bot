@@ -538,13 +538,81 @@ func handlePrivateMessage(bot *telebot.Bot, c telebot.Context) error {
 	if groupConfig.RestrictionType == "" {
 		time.Sleep(700*time.Millisecond)
 
-		bot.Send(c.Sender(), "To set restriction parameters for new subscribers, call the command\n /add_type_restriction")
+		// bot.Send(c.Sender(), "To set restriction parameters for new subscribers, call the command\n /add_type_restriction")
+		bot.Send(c.Sender(), "To set restriction parameters for new subscribers")
+
+		// Immediately ask for restriction type
+        return AddRestrictionTypeFunc(bot, c, groupChatID, groupChatName, len(groupConfig.VerificationParams) == 1)
 	} else {
 		bot.Send(c.Sender(), "Another verification parameter has been added.")
 	}
 	
 	return nil
 		
+}
+
+// Unified logic to set restriction type add_type_restriction_func
+func AddRestrictionTypeFunc(bot *telebot.Bot, c telebot.Context, groupChatID int64, groupChatName string, isFirstParameter bool) error {
+    // Create buttons ''Block'' and ''Delete''
+    btnBlock := telebot.InlineButton{
+        Text:   "Block",
+        Unique: "block",
+    }
+    btnDelete := telebot.InlineButton{
+        Text:   "Delete",
+        Unique: "delete",
+    }
+    // Create a keyboard with buttons
+    inlineKeys := [][]telebot.InlineButton{{btnBlock, btnDelete}}
+    keyboard := &telebot.ReplyMarkup{InlineKeyboard: inlineKeys}
+
+    if _, err := bot.Send(c.Sender(), "Select restriction type:", keyboard); err != nil {
+        log.Printf("Error sending keyboard: %v", err)
+        return err
+    }
+
+    // Fetch or initialize group configuration
+    groupConfig, exists := storage.VerificationParamsMap[groupChatID]
+    if !exists {
+        groupConfig = storage.GroupVerificationConfig{
+            VerificationParams: []storage.VerificationParams{},
+            ActiveIndex:        -1, // Initially, no parameter is active
+        }
+    }
+
+    // Set ActiveIndex to 0 if this is the first parameter
+    if isFirstParameter {
+        groupConfig.ActiveIndex = 0
+        storage.VerificationParamsMap[groupChatID] = groupConfig
+    }
+
+    bot.Handle(&btnBlock, func(c telebot.Context) error {
+        storage.AddRestrictionType(groupChatID, "block")
+        c.Send("Restriction type set to 'block'.")
+
+        // Send a success message
+        if isFirstParameter {
+            c.Send(fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", groupChatName))
+        } else {
+            c.Send("Another verification parameter has been added.")
+        }
+        return nil
+    })
+
+    bot.Handle(&btnDelete, func(c telebot.Context) error {
+        storage.AddRestrictionType(groupChatID, "delete")
+        c.Send("Restriction type set to 'delete'.")
+
+        // Send a success message
+        if isFirstParameter {
+            c.Send(fmt.Sprintf("Verification parameters have been successfully set for the group '%s'.", groupChatName))
+        } else {
+            c.Send("Another verification parameter has been added.")
+        }
+        return nil
+    })
+
+    return nil
 }
 
 // Handler for /add_type_restriction
@@ -924,6 +992,49 @@ func AddVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) erro
     }
 }
 
+// Handler deleting all verification parameters for a group /delete_verification_params
+func DeleteVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) error {
+	return func(c telebot.Context) error {
+		userID := c.Sender().ID
+
+		// Check if the user is associated with a group setup
+		groupChatID := storage.GroupSetupState[userID]
+		if groupChatID == 0 {
+			log.Println("Group not set up for user:", userID)
+			return c.Send("You are not associated with any group. Use /setup first.")
+		}
+
+		groupChat, _ := bot.ChatByID(groupChatID)
+		if groupChat == nil {
+			log.Printf("Failed to fetch group chat by ID: %d", groupChatID)
+			return c.Send("Failed to fetch the group chat. Please try again.")
+		}
+
+		// Locking the storage mutex to access the VerificationParamsMap
+		storage.DataMutex.Lock()
+		defer storage.DataMutex.Unlock()
+
+		// Check if verification parameters exist for the group
+		groupConfig, exists := storage.VerificationParamsMap[groupChatID]
+		if !exists || len(groupConfig.VerificationParams) == 0 {
+			log.Printf("No verification parameters found for group ID: %d", groupChatID)
+			return c.Send("No verification parameters are set for this group.")
+		}
+
+		// Clear verification parameters for the group
+		groupConfig.VerificationParams = []storage.VerificationParams{}
+		groupConfig.ActiveIndex = -1 // Reset active index
+
+		// Update the storage
+		storage.VerificationParamsMap[groupChatID] = groupConfig
+		log.Printf("Verification parameters cleared for group '%s' (ID: %d)", groupChat.Title, groupChatID)
+
+		// Notify the user
+		return c.Send("All verification parameters have been successfully cleared for this group.")
+	}
+}
+
+
 // ListVerificationParamsHandler displays the list of added verification parameters /list_verification_params
 func ListVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) error {
     return func(c telebot.Context) error {
@@ -949,9 +1060,9 @@ func ListVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) err
             restrictionType = "Not set"
         }
 
-        // Build the list of verification parameters
+        // Build the response
         var response strings.Builder
-        response.WriteString("Verification parameters for the group:\n\n")
+        response.WriteString("*Verification parameters for the group:*\n\n")
         for i, param := range groupConfig.VerificationParams {
             activeMarker := ""
             if i == groupConfig.ActiveIndex {
@@ -966,15 +1077,29 @@ func ListVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) err
                 }
             }
 
-            response.WriteString(fmt.Sprintf("%d. Type: %s%s\n", i+1, queryType, activeMarker))
+            // Add the type header
+            response.WriteString(fmt.Sprintf("*Type:* `%s`%s\n\n", queryType, activeMarker))
+
+            // Convert the parameter to JSON with indentation
+            formattedJSON, err := json.MarshalIndent(param, "", "    ")
+            if err != nil {
+                log.Printf("Failed to format JSON for param %d: %v", i+1, err)
+                response.WriteString("Error formatting JSON\n\n")
+                continue
+            }
+
+            // Add the JSON as a code block
+            response.WriteString("```\n")
+            response.WriteString(string(formattedJSON))
+            response.WriteString("\n```\n\n")
         }
 
         // Add the restriction type information
-        response.WriteString("\nRestriction type for new members: ")
-        response.WriteString(restrictionType)
+        response.WriteString("*Restriction type for new members:* ")
+        response.WriteString(fmt.Sprintf("`%s`", restrictionType))
 
         // Send the list to the admin
-        return c.Send(response.String())
+        return c.Send(response.String(), telebot.ModeMarkdown)
     }
 }
 
