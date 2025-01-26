@@ -34,4 +34,5 @@ Step 4 Run the Bot
 Run the bot using the following command:
 
 ```bash
-go run main.go```
+go run main.go
+```
