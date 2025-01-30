@@ -5,11 +5,11 @@ import (
 	// "errors"
 	"fmt"
 
-	//"log"
+	"log"
 	"sync"
 
 	bolt "go.etcd.io/bbolt"
-	"gopkg.in/telebot.v3"
+	//"gopkg.in/telebot.v3"
 )
 
 var (
@@ -18,10 +18,10 @@ var (
 	DataChanges = make(chan UserChangeEvent, 100)
 
 	// storages
-	//UserStore = make(map[int64]*UserVerification)
-	VerificationParamsMap = make(map[int64]GroupVerificationConfig)
-	GroupSetupState = make(map[int64]int64)
-	VerifiedUsersList = make(map[int64][]VerifiedUser)
+	// UserStore = make(map[int64]*UserVerification)
+	// VerificationParamsMap = make(map[int64]GroupVerificationConfig)
+	// GroupSetupState = make(map[int64]int64)
+	//VerifiedUsersList = make(map[int64][]VerifiedUser)
 
 )
 
@@ -72,16 +72,16 @@ type UserVerification struct {
 	Verified  bool
 	SessionID int64
 	RestrictStatus bool
-	verifyMsg *VerifyMsg
+	//verifyMsg *VerifyMsg
 	AuthToken string
 	Role string
 }
 
 // Struct for the verification message
-type VerifyMsg struct {
-	msgId int
-	msg *telebot.Message
-}
+// type VerifyMsg struct {
+// 	msgId int
+// 	msg *telebot.Message
+// }
 
 // UserChangeEvent - user data change event structure for the channel
 type UserChangeEvent struct {
@@ -353,6 +353,116 @@ func GetIdGroupFromGroupSetupState(userID int64) (int64, error) {
 	return groupID, err
 }
 
+// ========================
+
+// Functions for the VerifiedUsersList
+
+// AddVerifiedUser - add user to verified list in database
+func AddVerifiedUser(groupID int64, userID int64, userName string, VerifiedToken string, typeVerification string, authToken string) {
+	db.Update(func(tx *bolt.Tx) error {
+		// Get the VerifiedUsersList bucket
+		bucket := tx.Bucket([]byte("VerifiedUsersList"))
+
+		// Create a new VerifiedUser object
+		user := User{
+			ID:       userID,
+			UserName: userName,
+		}
+
+		// Create the verifiedUser object
+		verifiedUser := VerifiedUser{
+			User:             user,
+			TypesVerification: []string{typeVerification},
+			AuthToken:         authToken,
+		}
+
+		// Serialize the VerifiedUser into JSON
+		data, err := json.Marshal(verifiedUser)
+		if err != nil {
+			return err
+		}
+
+		// Get the existing list of users for the group
+		groupBucket := bucket.Bucket(itob(groupID))
+		if groupBucket == nil {
+			// If group not exists, create a new list
+			groupBucket, err = bucket.CreateBucket(itob(groupID))
+			if err != nil {
+				return err
+			}
+		}
+
+		// Check if the user exists in the group's list
+		userBucket := groupBucket.Bucket(itob(userID))
+		if userBucket != nil {
+			// User exists, update their verification types and auth token
+			var existingUser VerifiedUser
+			err := json.Unmarshal(userBucket.Get([]byte("user_data")), &existingUser)
+			if err != nil {
+				return err
+			}
+			// Update types of verification
+			existingUser.TypesVerification = appendIfNotExists(existingUser.TypesVerification, typeVerification)
+			existingUser.AuthToken = authToken
+
+			// Re-serialize the updated user and save it back to the database
+			data, err = json.Marshal(existingUser)
+			if err != nil {
+				return err
+			}
+		}
+
+		// Add or update the user data in the group bucket
+		err = groupBucket.Put(itob(userID), data)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+
+// RemoveVerifiedUser - removes a user from VerifiedUsersList by group ID and user ID in database
+func RemoveVerifiedUser(groupID int64, userID int64) {
+	db.Update(func(tx *bolt.Tx) error {
+		// Get the VerifiedUsersList bucket
+		bucket := tx.Bucket([]byte("VerifiedUsersList"))
+
+		// Get the group bucket
+		groupBucket := bucket.Bucket(itob(groupID))
+		if groupBucket == nil {
+			log.Printf("Group %d not found in VerifiedUsersList", groupID)
+			return nil
+		}
+
+		// Get the user bucket
+		userBucket := groupBucket.Bucket(itob(userID))
+		if userBucket == nil {
+			log.Printf("User %d not found in group %d", userID, groupID)
+			return nil
+		}
+
+		// Delete the user bucket
+		err := groupBucket.DeleteBucket(itob(userID))
+		if err != nil {
+			return err
+		}
+
+		// If the group is now empty, remove the group
+		if groupBucketStats := groupBucket.Stats(); groupBucketStats.KeyN == 0 {
+			err := bucket.DeleteBucket(itob(groupID))
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+
+
 // Helper functions
 
 // itob - converts int64 to bytes (needed for keys in bbolt)
@@ -379,4 +489,14 @@ func btoi(b []byte) int64 {
 		int64(b[5])<<16 |
 		int64(b[6])<<8 |
 		int64(b[7])
+}
+
+// Helper function to append a string to a slice if it doesn't already exist
+func appendIfNotExists(slice []string, item string) []string {
+	for _, existingItem := range slice {
+		if existingItem == item {
+			return slice
+		}
+	}
+	return append(slice, item)
 }
