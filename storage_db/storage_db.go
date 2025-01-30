@@ -18,7 +18,7 @@ var (
 	DataChanges = make(chan UserChangeEvent, 100)
 
 	// storages
-	UserStore = make(map[int64]*UserVerification)
+	//UserStore = make(map[int64]*UserVerification)
 	VerificationParamsMap = make(map[int64]GroupVerificationConfig)
 	GroupSetupState = make(map[int64]int64)
 	VerifiedUsersList = make(map[int64][]VerifiedUser)
@@ -127,16 +127,16 @@ func AddOrUpdateUser(userID int64, user *UserVerification) error {
 	err := db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte("UserStore"))
 		if bucket == nil {
-			return fmt.Errorf("bucket %s не найден", []byte("UserStore"))
+			return fmt.Errorf("bucket %s not found", []byte("UserStore"))
 		}
 
-		// Сериализуем структуру UserVerification в JSON
+		// Serialize the UserVerification structure to JSON
 		data, err := json.Marshal(user)
 		if err != nil {
 			return err
 		}
 
-		// Записываем данные в bucket
+		// Write data to the bucket
 		return bucket.Put(itob(userID), data)
 	})
 
@@ -161,13 +161,13 @@ func UpdateField(userID int64, updateFunc func(*UserVerification)) error {
 	err := db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte("UserStore"))
 		if bucket == nil {
-			return fmt.Errorf("bucket %s не найден", []byte("UserStore"))
+			return fmt.Errorf("bucket %s not found", []byte("UserStore"))
 		}
 
-		// Получаем текущие данные пользователя
+		// Getting current user data
 		data := bucket.Get(itob(userID))
 		if data == nil {
-			return fmt.Errorf("пользователь %d не найден", userID)
+			return fmt.Errorf("User %d not found", userID)
 		}
 
 		user = &UserVerification{}
@@ -175,10 +175,10 @@ func UpdateField(userID int64, updateFunc func(*UserVerification)) error {
 			return err
 		}
 
-		// Обновляем данные пользователя через переданную функцию
+		// Update user data using the passed function
 		updateFunc(user)
 
-		// Сохраняем обновленные данные обратно в bucket
+		// Save updated data back to the bucket
 		updatedData, err := json.Marshal(user)
 		if err != nil {
 			return err
@@ -188,7 +188,7 @@ func UpdateField(userID int64, updateFunc func(*UserVerification)) error {
 	})
 
 	if err == nil {
-		// Отправляем событие в канал
+		// Sending an event to a channel
 		DataChanges <- UserChangeEvent{
 			UserID: userID,
 			Data:   user,
@@ -206,15 +206,15 @@ func DeleteUser(userID int64) error {
 	err := db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte("UserStore"))
 		if bucket == nil {
-			return fmt.Errorf("bucket %s не найден", []byte("UserStore"))
+			return fmt.Errorf("bucket %s not found", []byte("UserStore"))
 		}
 
-		// Удаляем пользователя
+		// Delete data by user
 		return bucket.Delete(itob(userID))
 	})
 
 	if err == nil {
-		// Отправляем событие о удалении пользователя
+		// Send delete event (Data becomes nil)
 		DataChanges <- UserChangeEvent{
 			UserID: userID,
 			Data:   nil,
@@ -234,12 +234,12 @@ func GetUser(userID int64) (*UserVerification, error) {
 	err := db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte("UserStore"))
 		if bucket == nil {
-			return fmt.Errorf("bucket %s не найден", []byte("UserStore"))
+			return fmt.Errorf("bucket %s not found", []byte("UserStore"))
 		}
 
 		data := bucket.Get(itob(userID))
 		if data == nil {
-			return fmt.Errorf("пользователь %d не найден", userID)
+			return fmt.Errorf("User %d not found", userID)
 		}
 
 		return json.Unmarshal(data, &user)
@@ -252,14 +252,71 @@ func GetUser(userID int64) (*UserVerification, error) {
 	return &user, nil
 }
 
+// ========================
+// Functions for the VerificationParamsStore
 
+// Add restriction type to group
+func AddRestrictionType(groupID int64, restrictionType string) error {
+	return db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte("VerificationParamsStore"))
+		if bucket == nil {
+			return fmt.Errorf("bucket VerificationParamsStore not found")
+		}
 
+		// Read the current value from the database
+		data := bucket.Get(itob(groupID))
+		var groupConfig GroupVerificationConfig
 
+		if data != nil {
+			if err := json.Unmarshal(data, &groupConfig); err != nil {
+				return fmt.Errorf("error parsing JSON: %w", err)
+			}
+		}
 
+		// Update RestrictionType
+		groupConfig.RestrictionType = restrictionType
+
+		// Encode back to JSON and save to the database
+		encoded, err := json.Marshal(groupConfig)
+		if err != nil {
+			return fmt.Errorf("error encoding JSON: %w", err)
+		}
+
+		return bucket.Put(itob(groupID), encoded)
+	})
+}
+
+// Get restriction type from group
+func GetRestrictionType(groupID int64) (string, error) {
+	var restrictionType string
+
+	err := db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte("VerificationParamsStore"))
+		if bucket == nil {
+			return fmt.Errorf("bucket VerificationParamsStore not found")
+		}
+
+		// Get the data from the bucket
+		data := bucket.Get(itob(groupID))
+		if data == nil {
+			return nil // The group wasn't find, return empty value
+		}
+
+		var groupConfig GroupVerificationConfig
+		if err := json.Unmarshal(data, &groupConfig); err != nil {
+			return fmt.Errorf("error parsing JSON: %w", err)
+		}
+
+		restrictionType = groupConfig.RestrictionType
+		return nil
+	})
+
+	return restrictionType, err
+}
 
 // Helper functions
 
-// itob - конвертирует int64 в байты (нужно для ключей в bbolt)
+// itob - converts int64 to bytes (needed for keys in bbolt)
 func itob(v int64) []byte {
 	b := make([]byte, 8)
 	b[0] = byte(v >> 56)
