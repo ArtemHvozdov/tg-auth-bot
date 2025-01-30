@@ -314,6 +314,45 @@ func GetRestrictionType(groupID int64) (string, error) {
 	return restrictionType, err
 }
 
+// ========================
+// Functions for the GroupSetupState
+
+// AddAdminUser - adds a new admin user to the GroupSetupState
+func AddAdminUser(userID, groupID int64) error {
+	return db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte("GroupSetupState"))
+		if bucket == nil {
+			return fmt.Errorf("bucket GroupSetupState not found")
+		}
+
+		// Save groupID as a value using userID as a key
+		return bucket.Put(itob(userID), itob(groupID))
+	})
+}
+
+// GetIdGroupFromGroupSetapState - returns the group ID by the admin user ID
+func GetIdGroupFromGroupSetupState(userID int64) (int64, error) {
+	var groupID int64
+
+	err := db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte("GroupSetupState"))
+		if bucket == nil {
+			return fmt.Errorf("bucket GroupSetupState not found")
+		}
+
+		// Get the value by key
+		data := bucket.Get(itob(userID))
+		if data == nil {
+			return nil // If there is no record, return 0
+		}
+
+		groupID = btoi(data)
+		return nil
+	})
+
+	return groupID, err
+}
+
 // Helper functions
 
 // itob - converts int64 to bytes (needed for keys in bbolt)
@@ -328,4 +367,16 @@ func itob(v int64) []byte {
 	b[6] = byte(v >> 8)
 	b[7] = byte(v)
 	return b
+}
+
+// btoi - converts bytes back to int64 (needed for retrieving keys in bbolt)
+func btoi(b []byte) int64 {
+	return int64(b[0])<<56 |
+		int64(b[1])<<48 |
+		int64(b[2])<<40 |
+		int64(b[3])<<32 |
+		int64(b[4])<<24 |
+		int64(b[5])<<16 |
+		int64(b[6])<<8 |
+		int64(b[7])
 }
