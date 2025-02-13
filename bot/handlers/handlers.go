@@ -12,7 +12,8 @@ import (
 	//"strconv"
 	//"sync"
 	"github.com/ArtemHvozdov/tg-auth-bot/auth"
-	"github.com/ArtemHvozdov/tg-auth-bot/storage"
+	
+	"github.com/ArtemHvozdov/tg-auth-bot/storage_db"
 
 	"time"
 
@@ -25,7 +26,7 @@ var DataMutex sync.Mutex
 func isAdmin(bot *telebot.Bot, chatID int64, userID int64) bool {
 	member, err := bot.ChatMemberOf(&telebot.Chat{ID: chatID}, &telebot.User{ID: userID})
 	if err != nil {
-		log.Printf("Error fetching user role: %v", err)
+		log.Printf("Bot handlers log:(isAdmin func) - Error fetching user role: %v", err)
 		return false
 	}
 	return member.Role == "administrator" || member.Role == "creator"
@@ -49,7 +50,7 @@ func SetupHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		// Step 1: Send a message about the need to add the bot to the group with administrator rights
 		msg := "To set me up for verification in your group, please add me to the group as an administrator and call the /check_admin command in the group."
 		if err := c.Send(msg); err != nil {
-			log.Printf("Error sending setup message: %v", err)
+			log.Printf("Blog handler log: (SetupHandler func) - Error sending setup message: %v", err)
 			return err
 		}
 		return nil
@@ -70,10 +71,10 @@ func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		chatName := c.Chat().Title // Getting the name of the chat (group)
 		userName := c.Sender().Username // Username
 
-		storage.AddAdminUser(userID, chatID)
+		storage_db.AddAdminUser(userID, chatID)
 
-		log.Printf("User ID: %d, Chat ID: %d, Command received", userID, chatID)
-		log.Printf("User's name: %s %s (@%s)", c.Sender().FirstName, c.Sender().LastName, c.Sender().Username)
+		log.Printf("Bot handler log: (CheckAdminHandler func) - User ID: %d, Chat ID: %d, Command received", userID, chatID)
+		log.Printf("Bot handler log: (CheckAdminHandler func) - User's name: %s %s (@%s)", c.Sender().FirstName, c.Sender().LastName, c.Sender().Username)
 
 		// Send a message to the user
 		msgContinueForAdmin, _ := bot.Send(&telebot.Chat{ID: chatID}, "Administrator, return to the private chat with me to continue configuring the settings")
@@ -82,31 +83,31 @@ func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		go func() {
 			time.Sleep(1 * time.Minute)
 			if err := bot.Delete(msgContinueForAdmin); err != nil {
-				log.Printf("Error deleting continue for admins message: %v", err)
+				log.Printf("Bot handler log: (CheckAdminHandler func) - Error deleting continue for admins message: %v", err)
 			}
 		}()
 
 		// Checking if the bot is an administrator in this group
 		member, err := bot.ChatMemberOf(&telebot.Chat{ID: chatID}, &telebot.User{ID: bot.Me.ID})
 		if err != nil {
-			log.Printf("Error fetching bot's role in the group: %v", err)
+			log.Printf("Bot handler log: (CheckAdminHandler func) - Bot handler log: (ChecnkAdminHandler func) - Error fetching bot's role in the group: %v", err)
 			// Send a private message to the user
 			msg := "I couldn't fetch my role in this group. Please make sure I am an administrator."
 			if _, err := bot.Send(&telebot.User{ID: userID}, msg); err != nil {
-				log.Printf("Error sending bot admin check message: %v", err)
+				log.Printf("Bot handler log: (CheckAdminHandler func) - Error sending bot admin check message: %v", err)
 				return err
 			}
 			return nil
 		}
 
 		// Logging the bot's role
-		log.Printf("Bot's role in the group '%s': %s", chatName, member.Role)
+		log.Printf("Bot handler log: (CheckAdminHandler func) - Bot's role in the group '%s': %s", chatName, member.Role)
 
 		// Checking if the bot is an administrator
 		if member.Role != "administrator" && member.Role != "creator" {
 			msg := fmt.Sprintf("I am not an administrator in the group '%s'. Please promote me to an administrator.", chatName)
 			if _, err := bot.Send(&telebot.User{ID: userID}, msg); err != nil {
-				log.Printf("Error sending bot admin check message: %v", err)
+				log.Printf("Bot handler log: (CheckAdminHandler func) - Error sending bot admin check message: %v", err)
 				return err
 			}
 			return nil
@@ -115,25 +116,25 @@ func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		// Checking if the user the bot is interacting with is an administrator
 		memberUser, err := bot.ChatMemberOf(&telebot.Chat{ID: chatID}, &telebot.User{ID: userID})
 		if err != nil {
-			log.Printf("Error fetching user's role: %v", err)
+			log.Printf("Bot handler log: (CheckAdminHandler func) - Error fetching user's role: %v", err)
 			// Send a private message to the user
 			msg := "I couldn't fetch your role in this group."
 			if _, err := bot.Send(&telebot.User{ID: userID}, msg); err != nil {
-				log.Printf("Error sending user admin check message: %v", err)
+				log.Printf("Bot handler log: (CheckAdminHandler func) - Error sending user admin check message: %v", err)
 				return err
 			}
 			return nil
 		}
 
 		// Logging the user role
-		log.Printf("User's role in the group '%s': %s", chatName, memberUser.Role)
+		log.Printf("Bot handler log: (CheckAdminHandler func) - User's role in the group '%s': %s", chatName, memberUser.Role)
 
 		// Checking if the user is an administrator
 		if memberUser.Role != "administrator" && memberUser.Role != "creator" {
 			// We inform the user that he is not an administrator
 			groupMsg := fmt.Sprintf("@%s, you are not an administrator in the group '%s'. You cannot configure me for this group.", userName, chatName)
 			if _, err := bot.Send(&telebot.Chat{ID: chatID}, groupMsg); err != nil {
-				log.Printf("Error sending message to group: %v", err)
+				log.Printf("Bot handler log: (CheckAdminHandler func) - Error sending message to group: %v", err)
 				return err
 			}
 			return nil
@@ -142,7 +143,7 @@ func CheckAdminHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		// All checks were successful
 		msg := fmt.Sprintf("I have confirmed your admin status and my role in the group '%s'. You can now proceed with the setup.", chatName)
 		if _, err := bot.Send(&telebot.User{ID: userID}, msg); err != nil {
-			log.Printf("Error sending success message to user: %v", err)
+			log.Printf("Bot handler log: (CheckAdminHandler func) - Error sending success message to user: %v", err)
 			return err
 		}
 
@@ -159,12 +160,12 @@ func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 	return func(c telebot.Context) error {
 		for _, member := range c.Message().UsersJoined {
 			if isAdmin(bot, c.Chat().ID, member.ID) {
-				log.Printf("Skipping admin user @%s (ID: %d)", member.Username, member.ID)
+				log.Printf("Bot handler log:(NewUserJoinedHandler) - Skipping admin user @%s (ID: %d)", member.Username, member.ID)
 				continue
 			}
 
 			// Adding a new user to the repository
-			newUser := &storage.UserVerification{
+			newUser := &storage_db.UserVerification{
 				UserID:    member.ID,
 				Username:  member.Username,
 				GroupID:   c.Chat().ID,
@@ -175,14 +176,18 @@ func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 				RestrictStatus: true,
 			}
 
-			storage.AddOrUpdateUser(member.ID, newUser)
+			storage_db.AddOrUpdateUser(member.ID, newUser)
 
-			log.Println("New user:", newUser)
+			log.Println("Bot handler log:(NewUserJoinedHandler) - New user:", newUser)
 
-			typeRestriction := storage.GetRestrictionType(c.Chat().ID)
+			typeRestriction, err := storage_db.GetRestrictionType(c.Chat().ID)
+			if err != nil {
+				log.Printf("Bot handler log:(NewUserJoinedHandler) - Error getting restriction type: %v", err)
+				return err
+			}
 
-			log.Println("New user handler")
-			log.Println("Type restriction:", typeRestriction)
+			log.Println("Bot handler log:(NewUserJoinedHandler) - New user handler was called")
+			log.Println("Bot handler log:(NewUserJoinedHandler) - Type restriction:", typeRestriction)
 
 			// Restrict the user if the restriction type is "block"
 			if typeRestriction == "block" {
@@ -193,13 +198,13 @@ func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 					},
 				})
 				if err != nil {
-					log.Println("Nes user handler")
-					log.Printf("Failed to restrict user @%s (ID: %d): %s", member.Username, member.ID, err)
+					log.Println("Bot handler log:(NewUserJoinedHandler) - New user handler")
+					log.Printf("Bot handler log:(NewUserJoinedHandler) - Failed to restrict user @%s (ID: %d): %s", member.Username, member.ID, err)
 					continue
 				}
 			}
 
-			log.Println("Bot Logs: new member -", newUser)
+			log.Println("Bot handler log:(NewUserJoinedHandler) - new member -", newUser)
 
 			btn := telebot.InlineButton{
 				Text: "Verify your age",
@@ -207,19 +212,20 @@ func NewUserJoinedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 			}
 
 			inlineKeys := [][]telebot.InlineButton{{btn}}
-			log.Printf("New member @%s added to verification queue.", member.Username)
+			log.Printf("Bot handler log:(NewUserJoinedHandler) - New member @%s added to verification queue.", member.Username)
 
 			msg, err := bot.Send(
 				c.Chat(),
-				fmt.Sprintf("Hi, @%s! Please verify your age by clicking the button below.", member.Username),
+				fmt.Sprintf("Hi, @%s! Please verify your age by clicking the button below and call /verify command.", member.Username),
 				&telebot.ReplyMarkup{InlineKeyboard: inlineKeys},
 			)
 			if err != nil {
-				log.Printf("Error sending verification message: %v", err)
+				log.Printf("Bot handler log:(NewUserJoinedHandler) - Error sending verification message: %v", err)
 				return err
 			}
+
 			// Save the message ID for further deletion
-			storage.UserStore[member.ID].AddVerificationMsg(msg.ID, msg)
+			storage_db.AddVerificationMsg(member.ID, msg.ID, msg)
 
 			go handleVerificationTimeout(bot, member.ID, c.Chat().ID)
 		}
@@ -233,9 +239,9 @@ func VerifyHandler(bot *telebot.Bot) func(c telebot.Context) error {
 	return func(c telebot.Context) error {
 		userID := c.Sender().ID
 
-		userData, exists := storage.GetUser(userID)
-		if !exists || !userData.IsPending {
-			log.Printf("User @%s (ID: %d) is not awaiting verification.", c.Sender().Username, userID)
+		userData, err := storage_db.GetUser(userID)
+		if err != nil || !userData.IsPending {
+			log.Printf("Bot handler log:(VerifyHandler) - User @%s (ID: %d) is not awaiting verification.", c.Sender().Username, userID)
 			return c.Send("You are not awaiting verification in any group.")
 		}
 
@@ -248,25 +254,27 @@ func VerifyHandler(bot *telebot.Bot) func(c telebot.Context) error {
 			return err
 		}
 
-		userGroupID := storage.UserStore[userID].GroupID
-
-		// Fetch group configuration
-		groupConfig, exists := storage.VerificationParamsMap[userGroupID]
-		if !exists {
-			log.Printf("Verification parameters not found for group ID: %d", userGroupID)
-			return c.Send("Verification parameters are not configured for your group.")
-		}
-
-		// Check that the active index is valid
-		if groupConfig.ActiveIndex < 0 || groupConfig.ActiveIndex >= len(groupConfig.VerificationParams) {
-			log.Printf("Invalid active index for group ID: %d", userGroupID)
-			return c.Send("Verification configuration error. Please contact the group administrator.")
+		// userGroupID := storage_db.UserStore[userID].GroupID
+		userGroupID, err := storage_db.GetUserGroupID(userID)
+		if err != nil {
+			log.Printf("Bot handler log:(VerifyHandler) - Error getting user group ID: %v", err)
+			return err
 		}
 
 		// Get active verification parameters
-		activeParams := groupConfig.VerificationParams[groupConfig.ActiveIndex]
 
-		jsonData, _ := auth.GenerateAuthRequest(userID, activeParams)
+		activeParams, _ := storage_db.GetActiveVerificationParams(userGroupID)
+
+		log.Println("Bot handler log:(VerifyHandler) func GetActiveVerificationParams - Active verification parameters:", activeParams)
+
+		groupConfig, err := storage_db.GetGroupConfigParams(userGroupID)
+		if err != nil {
+			log.Printf("Bot handler log:(VerifyHandler) - Error getting group configuration: %v", err)
+		}
+
+		params := groupConfig.VerificationParams[groupConfig.ActiveIndex]
+
+		jsonData, _ := auth.GenerateAuthRequest(userID, params)
 
 		base64Data := base64.StdEncoding.EncodeToString(jsonData)
 
@@ -274,7 +282,7 @@ func VerifyHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		deepLink := fmt.Sprintf("https://wallet.privado.id/#i_m=%s", base64Data)
 
 		// logs deeplinl
-		log.Println("Deep Link:", deepLink)
+		log.Println("Bot handler log:(VerifyHandler) - Deep Link:", deepLink)
 
 		btn := telebot.InlineButton{
 			Text: "Verify with Privado ID", // Text button
@@ -295,39 +303,48 @@ func VerifyHandler(bot *telebot.Bot) func(c telebot.Context) error {
 func handleVerificationTimeout(bot *telebot.Bot, userID, groupID int64) {
 	time.Sleep(10 * time.Minute)
 
-	userData, exists := storage.GetUser(userID)
-	if exists && userData.IsPending && !userData.Verified {
-		log.Printf("User @%s (ID: %d) failed verification on time. Removing from group.", userData.Username, userID)
+	userData, err := storage_db.GetUser(userID)
+	if err == nil && userData.IsPending && !userData.Verified {
+		log.Printf("Bot handler log:(handleVerificationTimeout) - User @%s (ID: %d) failed verification on time. Removing from group.", userData.Username, userID)
 		bot.Ban(&telebot.Chat{ID: groupID}, &telebot.ChatMember{User: &telebot.User{ID: userID}})
 		time.Sleep(1 * time.Second)
 		bot.Unban(&telebot.Chat{ID: groupID}, &telebot.User{ID: userID})
 		bot.Send(&telebot.User{ID: userID}, "You did not complete the verification on time and were removed from the group.")
-		storage.DeleteUser(userID)
+		storage_db.DeleteUser(userID)
 	}
 }
 
 // Store change listener
-func ListenForStorageChanges(bot *telebot.Bot) {
-	go func() {
-		for event := range storage.DataChanges {
+func ListenForstorage_dbChanges(bot *telebot.Bot) {
+	go func() { // panic: runtime error: invalid memory address or nil pointer dereference
+		for event := range storage_db.DataChanges {
 			userID := event.UserID
 			data := event.Data
 
 			if data == nil {
 				// User was delete
-				log.Printf("User ID: %d was removed from the store.", userID)
+				log.Printf("Bot handler log:(ListenForstorage_dbChanges) - User ID: %d was removed from the store.", userID)
+				data, _ = storage_db.GetUser(userID)
+				if data == nil {
+					log.Println("Bot handler log:(ListenForstorage_dbChanges) - Error getting user data")
+				}
 				continue
 			}
 
-			groupChatID := storage.UserStore[userID].GroupID
-			typeRestriction := storage.GetRestrictionType(groupChatID)
+			groupChatID := data.GroupID
+
+			typeRestriction, err := storage_db.GetRestrictionType(groupChatID)
+			if err != nil {
+				log.Printf("Bot handler log:(ListenForstorage_dbChanges) - Error getting restriction type from: %v", err)
+				continue
+			}
 
 			userIsAdminGroup := checkUserAsAdminInGroup(userID, groupChatID)
 
 			if !data.IsPending {
 				if data.Verified {
 					// Successful verification
-					log.Printf("User @%s (ID: %d) passed verification.", data.Username, userID)
+					log.Printf("Bot handler log:(ListenForstorage_dbChanges) - User @%s (ID: %d) passed verification.", data.Username, userID)
 					
 					// Restrict the user
 					if typeRestriction == "block" && !userIsAdminGroup {
@@ -340,8 +357,8 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 							},
 						})
 						if err != nil {
-							log.Println("Listen for storage changes handler")
-							log.Printf("Failed to restrict user @%s (ID: %d): %s", storage.UserStore[userID].Username, userID, err)
+							log.Println("Bot handler log:(ListenForstorage_dbChanges) - Listen for storage_db changes handler")
+							log.Printf("Bot handler log:(ListenForstorage_dbChanges) - Failed to restrict user @%s (ID: %d): %s", data.Username, userID, err)
 							continue
 						}
 					}
@@ -350,26 +367,16 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 						bot.Send(&telebot.User{ID: userID}, "You have successfully passed verification and can stay in the group.")
 
 						// Delete the verification message
-						storage.UserStore[userID].DeleteVerifyMessage(bot)
-						log.Println("Verification message deleted for user:", userID)
+						storage_db.DeleteVerifyMessage(bot, userID)
+						log.Println("Bot handler log:(ListenForstorage_dbChanges) - Verification message deleted for user:", userID)
 					}
 
 					if userIsAdminGroup {
-						params, exists := storage.VerificationParamsMap[groupChatID]
-						if !exists {
-							log.Printf("Verification parameters are not set for the group '%s'.", storage.UserStore[userID].GroupName)
+						activeParams, err := storage_db.GetActiveVerificationParams(groupChatID)
+						if err != nil {
+							log.Printf("Bot handler log:(ListenForstorage_dbChanges) - Error getting active verification parameters: %v", err)
 							return
 						}
-
-						// Get the active verification parameter
-						activeIndex := params.ActiveIndex
-						if activeIndex < 0 || activeIndex >= len(params.VerificationParams) {
-							log.Printf("Invalid active index for group '%s'.", storage.UserStore[userID].GroupName)
-							bot.Send(&telebot.User{ID: userID}, "The active verification parameter is not set correctly.")
-							return
-						}
-
-						activeParams := params.VerificationParams[activeIndex]
 						
 						// Combine active parameter with type restriction
 						result := map[string]interface{}{
@@ -379,14 +386,14 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 
 						formattedResult, err := json.MarshalIndent(result, "", "  ")
 						if err != nil {
-							log.Printf("Failed to format result: %v", err)
+							log.Printf("Bot handler log:(ListenForstorage_dbChanges) - Failed to format result: %v", err)
 							return
 						}
 
 						// Get the user's token
 						tokenStr, errGettingToken := GetAuthTokenFromAdmin(groupChatID, userID)
 						if !errGettingToken {
-							log.Printf("Failed to get token for user %d", userID)
+							log.Printf("Bot handler log:(ListenForstorage_dbChanges) - Failed to get token for user %d", userID)
 							return
 						}
 
@@ -394,7 +401,7 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 						fileName := fmt.Sprintf("token_%d.txt", userID)
 						err = os.WriteFile(fileName, []byte(tokenStr), 0644)
 						if err != nil {
-							log.Printf("Error writing AuthToken to file: %v", err)
+							log.Printf("Bot handler log:(ListenForstorage_dbChanges) - Error writing AuthToken to file: %v", err)
 							bot.Send(&telebot.User{ID: userID}, "Failed to create file with AuthToken.")
 						}
 
@@ -415,23 +422,23 @@ func ListenForStorageChanges(bot *telebot.Bot) {
 						}
 
 						if _, err := bot.Send(&telebot.User{ID: userID}, file); err != nil {
-							log.Printf("Error sending file: %v", err)
+							log.Printf("Bot handler log:(ListenForstorage_dbChanges) - Error sending file: %v", err)
 						} else {
 							// Remove the file after successfully sending it
 							if err := os.Remove(fileName); err != nil {
-								log.Printf("Error deleting file: %v", err)
+								log.Printf("Bot handler log:(ListenForstorage_dbChanges) - Error deleting file: %v", err)
 							}
 						}
 
 						time.Sleep(500*time.Millisecond)
 
 						bot.Send(&telebot.User{ID: userID}, "The test was successful. The parameters are configured correctly, the verification process is working.")
-						storage.DeleteUser(userID)
-						storage.RemoveVerifiedUser(groupChatID, userID)
+						storage_db.DeleteUser(userID)
+						storage_db.RemoveVerifiedUser(groupChatID, userID)
 					}
 				} else {
 					// Verification failed
-					log.Printf("User @%s (ID: %d) failed verification. Removing from group.", data.Username, userID)
+					log.Printf("Bot handler log:(ListenForstorage_dbChanges) - User @%s (ID: %d) failed verification. Removing from group.", data.Username, userID)
 					group := &telebot.Chat{ID: data.GroupID}
 					user := &telebot.User{ID: userID}
 					bot.Ban(group, &telebot.ChatMember{User: user})
@@ -457,7 +464,7 @@ func UnifiedHandler(bot *telebot.Bot) func(c telebot.Context) error {
             return handlePrivateMessage(bot, c)
 
         default:
-            log.Printf("Unhandled chat type: %s", chatType)
+            log.Printf("Bot handler log:(UnifiedHandler) - Unhandled chat type: %s", chatType)
             return nil
         }
     }
@@ -466,17 +473,21 @@ func UnifiedHandler(bot *telebot.Bot) func(c telebot.Context) error {
 // Handle group messages
 func handleGroupMessage(bot *telebot.Bot, c telebot.Context, userID int64) error {
 	chatGroupId := c.Chat().ID
-	typeRestriction := storage.GetRestrictionType(chatGroupId)
+	typeRestriction, err := storage_db.GetRestrictionType(chatGroupId)
+	if err != nil {
+		log.Printf("Bot handler log:(handleGroupMessage) - Error getting restriction type: %v", err)
+		return err
+	}
 
 	if typeRestriction == "delete" {
-		log.Println("Handle group message, if type == delete")
-		userData, exists := storage.GetUser(userID)
-		if !exists || userData.IsPending {
+		log.Println("Bot handler log:(handleGroupMessage) - Handle group message, if type == delete")
+		userData, err := storage_db.GetUser(userID)
+		if err != nil || userData.IsPending {
 			// Delete the user's message
 			if err := bot.Delete(c.Message()); err != nil {
-				log.Printf("Failed to delete message from @%s (ID: %d): %v", c.Sender().Username, userID, err)
+				log.Printf("Bot handler log:(handleGroupMessage) - Failed to delete message from @%s (ID: %d): %v", c.Sender().Username, userID, err)
 			} else {
-				log.Printf("Message from @%s (ID: %d) deleted (user awaiting verification).", c.Sender().Username, userID)
+				log.Printf("Bot handler log:(handleGroupMessage) - Message from @%s (ID: %d) deleted (user awaiting verification).", c.Sender().Username, userID)
 			}
 		}
 		return nil
@@ -488,59 +499,50 @@ func handleGroupMessage(bot *telebot.Bot, c telebot.Context, userID int64) error
 func handlePrivateMessage(bot *telebot.Bot, c telebot.Context) error {
 	userID := c.Sender().ID
 
-	groupChatID := storage.GroupSetupState[userID]
-	if groupChatID == 0 {
-		log.Println("Group not set up for user:", userID)
+	//groupChatID := storage_db.GroupSetupState[userID]
+	groupChatID, err := storage_db.GetIdGroupFromGroupSetupState(userID)
+	if groupChatID == 0 || err != nil {
+		log.Println("Bot handler log:(handlePrivateMessage) - Group not set up for user:", userID)
 		return nil
 	}
 
 	groupChat, _ := bot.ChatByID(groupChatID)
 	if groupChat == nil {
-		log.Printf("Failed to fetch group chat by ID: %d", groupChatID)
+		log.Printf("Bot handler log:(handlePrivateMessage) - Failed to fetch group chat by ID: %d", groupChatID)
 		return nil
 	}
 
 	groupChatName := groupChat.Title
 	if groupChatName == "" {
-		log.Printf("Failed to fetch group chat name by ID: %d", groupChatID)
+		log.Printf("Bot handler log:(handlePrivateMessage) - Failed to fetch group chat name by ID: %d", groupChatID)
 		return nil
 	}
 
-    var params storage.VerificationParams
+    var params storage_db.VerificationParams
 
     // Parse JSON from the admin's message
 	if err := json.Unmarshal([]byte(c.Text()), &params); err != nil {
-		log.Printf("Failed to parse JSON: %v", err)
+		log.Printf("Bot handler log:(handlePrivateMessage) - Failed to parse JSON: %v", err)
 		bot.Send(c.Sender(), "Invalid JSON format. Please ensure your parameters match the expected structure.")
 		return nil
 	}
 
     // Validate required fields in parsed JSON
 	if params.CircuitID == "" || params.ID == 0 || params.Query == nil {
-		log.Println("JSON does not contain all required fields.")
+		log.Println("Bot handler log:(handlePrivateMessage) - JSON does not contain all required fields.")
 		bot.Send(c.Sender(), "Missing required fields in JSON. Please include 'circuitId', 'id', and 'query'.")
 		return nil
 	}
 
-	// Fetch or initialize group configuration
-	groupConfig, exists := storage.VerificationParamsMap[groupChatID]
-	if !exists {
-		groupConfig = storage.GroupVerificationConfig{
-			VerificationParams: []storage.VerificationParams{},
-			ActiveIndex:        -1, // Initially, no parameter is active
-		}
-	}
-	
-	// Adding a new verification parameter
-	groupConfig.VerificationParams = append(groupConfig.VerificationParams, params)
-
-	// Save parameters to storage
-	storage.VerificationParamsMap[groupChatID] = groupConfig
-	log.Printf("Verification parameters set for group '%s': %+v", groupChatName, params)
+	// // Save parameters to storage_db
+	storage_db.SaveVerificationParams(groupChatID, params)
+	log.Printf("Bot handler log:(handlePrivateMessage) - Verification parameters set for group '%s': %+v", groupChatName, params)
 	bot.Send(c.Sender(), "JSON verification parameters have been add for the group.")
 
 	// Send a message depending on the number of parameters
-	if groupConfig.RestrictionType == "" {
+	restrictionType, _ := storage_db.GetRestrictionType(groupChatID)
+	groupConfig, _ := storage_db.GetGroupConfigParams(groupChatID)
+	if restrictionType == "" {
 		time.Sleep(200*time.Millisecond)
 
 		// bot.Send(c.Sender(), "To set restriction parameters for new subscribers, call the command\n /add_type_restriction")
@@ -572,32 +574,18 @@ func AddRestrictionTypeFunc(bot *telebot.Bot, c telebot.Context, groupChatID int
     keyboard := &telebot.ReplyMarkup{InlineKeyboard: inlineKeys}
 
     if _, err := bot.Send(c.Sender(), "Select restriction type:", keyboard); err != nil {
-        log.Printf("Error sending keyboard: %v", err)
+        log.Printf("Bot handler log:(AddRestrictionTypeFunc) - Error sending keyboard: %v", err)
         return err
     }
 
-    // Fetch or initialize group configuration
-    groupConfig, exists := storage.VerificationParamsMap[groupChatID]
-    if !exists {
-        groupConfig = storage.GroupVerificationConfig{
-            VerificationParams: []storage.VerificationParams{},
-            ActiveIndex:        -1, // Initially, no parameter is active
-        }
-    }
-
-    // Set ActiveIndex to 0 if this is the first parameter
-    if isFirstParameter {
-        groupConfig.ActiveIndex = 0
-        storage.VerificationParamsMap[groupChatID] = groupConfig
-    }
-
     bot.Handle(&btnBlock, func(c telebot.Context) error {
-        storage.AddRestrictionType(groupChatID, "block")
+        storage_db.AddRestrictionType(groupChatID, "block")
         c.Send("Restriction type set to 'block'.")
 
+		groupConfig, _ := storage_db.GetGroupConfigParams(groupChatID)
 		// Logs paprams for the group
-		log.Println("Function add restriction type")
-		log.Println("Group params:", storage.VerificationParamsMap[groupChatID])
+		log.Println("Bot handler log:(AddRestrictionTypeFunc, TR: block) - Function add restriction type")
+		log.Println("Bot handler log:(AddRestrictionTypeFunc, TR: block) - Group params:", groupConfig)
 
         // Send a success message
         if isFirstParameter {
@@ -609,12 +597,14 @@ func AddRestrictionTypeFunc(bot *telebot.Bot, c telebot.Context, groupChatID int
     })
 
     bot.Handle(&btnDelete, func(c telebot.Context) error {
-        storage.AddRestrictionType(groupChatID, "delete")
+        storage_db.AddRestrictionType(groupChatID, "delete")
         c.Send("Restriction type set to 'delete'.")
 
+		groupConfig, _ := storage_db.GetGroupConfigParams(groupChatID)
+
 		// Logs paprams for the group
-		log.Println("Function add restriction type")
-		log.Println("Group params:", storage.VerificationParamsMap[groupChatID])
+		log.Println("Bot handler log:(AddRestrictionTypeFunc, TR: delete) - Function add restriction type")
+		log.Println("Bot handler log:(AddRestrictionTypeFunc, TR: delete) - Group params:", groupConfig)
 
         // Send a success message
         if isFirstParameter {
@@ -634,15 +624,16 @@ func SetTypeRestrictionHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		userID := c.Sender().ID
 
 		// Check if the group is set up for this user
-		targetChatGroupID, exists := storage.GroupSetupState[userID]
-		if !exists {
+		targetChatGroupID, err := storage_db.GetIdGroupFromGroupSetupState(userID)
+		if err != nil {
+			log.Println("Bot handler log:(SetTypeRestrictionHandler) - Bot handlers logs: Group not set up for user:", userID)
 			return c.Send("You need to specify a group for restriction setup.")
 		}
 
 		// Get the group chat by ID
 		chat, err := bot.ChatByID(targetChatGroupID)
 		if err != nil {
-			log.Printf("Error fetching chat: %v", err)
+			log.Printf("Bot handler log:(SetTypeRestrictionHandler) - Error fetching chat: %v", err)
 			return c.Send("Failed to fetch chat information.")
 		}
 		groupChatName := chat.Title
@@ -653,7 +644,7 @@ func SetTypeRestrictionHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		}
 
 		// Fetch current restriction type
-		currentRestriction := storage.GetRestrictionType(targetChatGroupID)
+		currentRestriction, _ := storage_db.GetRestrictionType(targetChatGroupID)
 		if currentRestriction == "" {
 			currentRestriction = "Not set"
 		}
@@ -685,7 +676,7 @@ func SetTypeRestrictionHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		if _, err := bot.Send(c.Sender(), fmt.Sprintf(
 			"Current restriction type for the group '%s': %s.\n\nSelect a new restriction type:",
 			groupChatName, currentRestriction), keyboard); err != nil {
-			log.Printf("Error sending keyboard: %v", err)
+			log.Printf("Bot handler log:(SetTypeRestrictionHandler) - Error sending keyboard: %v", err)
 			return err
 		}
 
@@ -698,14 +689,21 @@ func SetTypeRestrictionHandler(bot *telebot.Bot) func(c telebot.Context) error {
 			}
 
 			// Update the restriction type
-			storage.AddRestrictionType(targetChatGroupID, "block")
+			storage_db.AddRestrictionType(targetChatGroupID, "block")
+
+			// Get config verification params for the group
+			groupConfig, err := storage_db.GetGroupConfigParams(targetChatGroupID)
+			if err != nil {
+				log.Printf("Bot handler log:(SetTypeRestrictionHandler) - Bot handlers log: Error fetching group configuration: %v", err)
+				return c.Send("Failed to fetch group configuration.")
+			}
 			
 			// Logs paprams for the group durin change restriction type
-			log.Println("Function set restriction type")
-			log.Println("Group params:", storage.VerificationParamsMap[targetChatGroupID])
+			log.Println("Bot handler log:(SetTypeRestrictionHandler) - Function set restriction type")
+			log.Println("Bot handler log:(SetTypeRestrictionHandler) - Group params:", groupConfig)
 
 			// Send a confirmation message without deleting or editing the keyboard message
-			_, err := bot.Send(c.Sender(), fmt.Sprintf("Restriction type for group '%s' has been changed to 'block'.", groupChatName))
+			_, err = bot.Send(c.Sender(), fmt.Sprintf("Restriction type for group '%s' has been changed to 'block'.", groupChatName))
 			return err
 		})
 
@@ -717,14 +715,21 @@ func SetTypeRestrictionHandler(bot *telebot.Bot) func(c telebot.Context) error {
 			}
 
 			// Update the restriction type
-			storage.AddRestrictionType(targetChatGroupID, "delete")
+			storage_db.AddRestrictionType(targetChatGroupID, "delete")
+
+			// Get config verification params for the group
+			groupConfig, err := storage_db.GetGroupConfigParams(targetChatGroupID)
+			if err != nil {
+				log.Printf("Bot handlers log: Error fetching group configuration: %v", err)
+				return c.Send("Failed to fetch group configuration.")
+			}
 
 			// Logs paprams for the group durin change restriction type
-			log.Println("Function set restriction type")
-			log.Println("Group params:", storage.VerificationParamsMap[targetChatGroupID])
+			log.Println("Bot handler log:(SetTypeRestrictionHandler) - Function set restriction type")
+			log.Println("Bot handler log:(SetTypeRestrictionHandler) - Group params:", groupConfig)
 
 			// Send a confirmation message without deleting or editing the keyboard message
-			_, err := bot.Send(c.Sender(), fmt.Sprintf("Restriction type for group '%s' has been changed to 'delete'.", groupChatName))
+			_, err = bot.Send(c.Sender(), fmt.Sprintf("Restriction type for group '%s' has been changed to 'delete'.", groupChatName))
 			return err
 		})
 
@@ -741,7 +746,8 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		// Determine where the handler was called: in a group or in a private chat
 		if c.Chat().Type == telebot.ChatPrivate {
 			// Check if there is a saved group for this administrator
-			if groupID, exists := storage.GroupSetupState[userID]; exists {
+			groupID, _ := storage_db.GetIdGroupFromGroupSetupState(userID)
+			if groupID != 0 {
 				groupChatID = groupID
 			} else {
 				return c.Send("You need to specify a group for verification setup.")
@@ -750,7 +756,7 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 			groupChatID = c.Chat().ID
 		}
 
-		log.Println("Group Chat ID:", groupChatID)
+		log.Println("Bot handler log:(TestVerificationHandler) - Group Chat ID:", groupChatID)
 
 		// Check if the user is an administrator of the group
 		if !isAdmin(bot, groupChatID, userID) {
@@ -758,7 +764,7 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		}
 
 		// Create a record for the admin's test verification
-		adminUser := &storage.UserVerification{
+		adminUser := &storage_db.UserVerification{
 			UserID:         userID,
 			Username:       c.Sender().Username,
 			GroupID:        groupChatID,
@@ -770,18 +776,17 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 			Role : 			"admin",
 		}
 
-		storage.AddOrUpdateUser(userID, adminUser)
+		storage_db.AddOrUpdateUser(userID, adminUser)
 
-		// Fetch group configuration
-		groupConfig, exists := storage.VerificationParamsMap[groupChatID]
-		if !exists {
-			log.Printf("Verification parameters not found for group ID: %d", groupChatID)
+		groupConfig, err := storage_db.GetGroupConfigParams(groupChatID)
+		if err != nil {
+			log.Printf("Bot handler log:(TestVerificationHandler) - Bot handlers log: Error fetching group configuration: %v", err)
 			return c.Send("Verification parameters are not configured for your group.")
 		}
 
 		// Check that the active index is valid
 		if groupConfig.ActiveIndex < 0 || groupConfig.ActiveIndex >= len(groupConfig.VerificationParams) {
-			log.Printf("Invalid active index for group ID: %d", groupChatID)
+			log.Printf("Bot handler log:(TestVerificationHandler) - Invalid active index for group ID: %d", groupChatID)
 			return c.Send("Verification configuration error. Please contact the group administrator.")
 		}
 
@@ -797,7 +802,7 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		// Generate a test request for verification
 		jsonData, err := auth.GenerateAuthRequest(userID, params)
 		if err != nil {
-			log.Printf("Error generating auth request: %v", err)
+			log.Printf("Bot handler log:(TestVerificationHandler) - Error generating auth request: %v", err)
 			return c.Send("Failed to generate verification request. Please try again later.")
 		}
 
@@ -816,7 +821,7 @@ func TestVerificationHandler(bot *telebot.Bot) func(c telebot.Context) error {
 		// Send a message with a link for test verification
 		_, err = bot.Send(c.Sender(), "Please test verify your age by clicking the link below:", inlineKeyboard)
 		if err != nil {
-			log.Printf("Error sending verification message: %v", err)
+			log.Printf("Bot handler log:(TestVerificationHandler) - Error sending verification message: %v", err)
 			return c.Send("Failed to send verification link. Please check your private messages.")
 		}
 
@@ -846,27 +851,27 @@ func VerifiedUsersListHeandler(bot *telebot.Bot) func(c telebot.Context) error {
 	return func(c telebot.Context) error {
 		userID := c.Sender().ID
 
-		// Check if the group is set up for this user
-		targetChatGroupID, exists := storage.GroupSetupState[userID]
-		if !exists {
+		targetChatGroupID, err := storage_db.GetIdGroupFromGroupSetupState(userID)
+		if err != nil {
+			log.Println("Bot handler log:(VerifiedUsersListHeandler) - Bot handlers log: Group not set up for user:", userID)
 			return c.Send("You need to set up a group for verification.")
 		}
 
 		// Get chat data
 		chat, err := bot.ChatByID(targetChatGroupID)
 		if err != nil {
-			log.Printf("Error fetching chat: %v", err)
+			log.Printf("Bot handler log:(VerifiedUsersListHeandler) - Error fetching chat: %v", err)
 			return c.Send("Failed to fetch chat information.")
 		}
 		targetChatGroupName := chat.Title
 
-		// Get the list of verified users for the group
-		storage.DataMutex.Lock()
-		verifiedUsers, groupExists := storage.VerifiedUsersList[targetChatGroupID]
-		storage.DataMutex.Unlock()
+		verifiedUsers, err := storage_db.GetVerifiedUsersList(targetChatGroupID)
+		if err != nil {
+			log.Printf("Bot handler log:(VerifiedUsersListHeandler) - Bot handlers log: Error fetching verified users list: %v", err)
+		}
 
 		// If the list for the group is empty or the group does not exist
-		if !groupExists || len(verifiedUsers) == 0 {
+		if err !=nil || len(verifiedUsers) == 0 {
 			return c.Send(fmt.Sprintf("No verified users in the group '%s'.", targetChatGroupName))
 		}
 		
@@ -883,21 +888,55 @@ func VerifiedUsersListHeandler(bot *telebot.Bot) func(c telebot.Context) error {
 	}
 }
 
+// Handler for delering all verified users /delete_all_verified_users for the group
+func DeleteAllVerifiedUsersHandler(bot *telebot.Bot) func(c telebot.Context) error {
+	return func(c telebot.Context) error {
+		userID := c.Sender().ID
+
+		targetChatGroupID, err := storage_db.GetIdGroupFromGroupSetupState(userID)
+		if err != nil {
+			log.Println("Bot handler log:(DeleteAllVerifiedUsersHandler) - Bot handlers log: Group not set up for user:", userID)
+			return c.Send("You need to set up a group for verification.")
+		}
+
+		// Get chat data
+		chat, err := bot.ChatByID(targetChatGroupID)
+		if err != nil {
+			log.Printf("Bot handler log:(DeleteAllVerifiedUsersHandler) - Error fetching chat: %v", err)
+			return c.Send("Failed to fetch chat information.")
+		}
+		targetChatGroupName := chat.Title
+
+		verifiedUsers, err := storage_db.GetVerifiedUsersList(targetChatGroupID)
+		if err != nil {
+			log.Printf("Bot handler log:(DeleteAllVerifiedUsersHandler) - Bot handlers log: Error fetching verified users list: %v", err)
+		}
+
+		// If the list for the group is empty or the group does not exist
+		if err != nil || len(verifiedUsers) == 0 {
+			return c.Send(fmt.Sprintf("No verified users in the group '%s'.", targetChatGroupName))
+		}
+
+		storage_db.DeleteAllVerifiedUsers(targetChatGroupID)
+
+		return c.Send(fmt.Sprintf("All verified users have been deleted for the group '%s'.", targetChatGroupName))
+	}
+}
+
 // AddVerificationParamsHandler handles adding verification parameters in a single step /add_verification_params
 func AddVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) error {
     return func(c telebot.Context) error {
         userID := c.Sender().ID
 
-        // Check if the user is linked to a group setup
-        groupChatID := storage.GroupSetupState[userID]
-        if groupChatID == 0 {
-            log.Println("Group not set up for user:", userID)
-            return c.Send("You are not associated with any group. Use /setup first.")
-        }
+		groupChatID, err := storage_db.GetIdGroupFromGroupSetupState(userID)
+		if err != nil {
+			log.Println("Bot handler log:(AddVerificationParamsHandler) - Bot handlers log: Group not set up for user:", userID)
+			return c.Send("You are not associated with any group. Use /setup first.")
+		}
 
         groupChat, _ := bot.ChatByID(groupChatID)
         if groupChat == nil {
-            log.Printf("Failed to fetch group chat by ID: %d", groupChatID)
+            log.Printf("Bot handler log:(AddVerificationParamsHandler) - Failed to fetch group chat by ID: %d", groupChatID)
             return c.Send("Failed to fetch the group chat. Please try again.")
         }
 
@@ -923,37 +962,19 @@ func DeleteAllVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context
 	return func(c telebot.Context) error {
 		userID := c.Sender().ID
 
-		// Check if the user is associated with a group setup
-		groupChatID := storage.GroupSetupState[userID]
-		if groupChatID == 0 {
-			log.Println("Group not set up for user:", userID)
+		groupChatID, err := storage_db.GetIdGroupFromGroupSetupState(userID)
+		if err != nil {
+			log.Println("Bot handler log:(DeleteAllVerificationParamsHandler) - Bot handlers log: Bot handlers log: Group not set up for user:", userID)
 			return c.Send("You are not associated with any group. Use /setup first.")
 		}
 
 		groupChat, _ := bot.ChatByID(groupChatID)
 		if groupChat == nil {
-			log.Printf("Failed to fetch group chat by ID: %d", groupChatID)
+			log.Printf("Bot handler log:(DeleteAllVerificationParamsHandler) - Failed to fetch group chat by ID: %d", groupChatID)
 			return c.Send("Failed to fetch the group chat. Please try again.")
 		}
 
-		// Locking the storage mutex to access the VerificationParamsMap
-		storage.DataMutex.Lock()
-		defer storage.DataMutex.Unlock()
-
-		// Check if verification parameters exist for the group
-		groupConfig, exists := storage.VerificationParamsMap[groupChatID]
-		if !exists || len(groupConfig.VerificationParams) == 0 {
-			log.Printf("No verification parameters found for group ID: %d", groupChatID)
-			return c.Send("No verification parameters are set for this group.")
-		}
-
-		// Clear verification parameters for the group
-		groupConfig.VerificationParams = []storage.VerificationParams{}
-		groupConfig.ActiveIndex = -1 // Reset active index
-
-		// Update the storage
-		storage.VerificationParamsMap[groupChatID] = groupConfig
-		log.Printf("Verification parameters cleared for group '%s' (ID: %d)", groupChat.Title, groupChatID)
+		storage_db.DeleteAllVerificationParams(groupChatID)
 
 		// Notify the user
 		return c.Send("All verification parameters have been successfully cleared for this group.")
@@ -966,19 +987,17 @@ func ListVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) err
     return func(c telebot.Context) error {
         userID := c.Sender().ID
 
-        // Check if the user is linked to a group setup
-        groupChatID := storage.GroupSetupState[userID]
-        if groupChatID == 0 {
-            log.Println("Group not set up for user:", userID)
-            return c.Send("You are not associated with any group. Use /setup first.")
-        }
+		groupChatID, err := storage_db.GetIdGroupFromGroupSetupState(userID)
+		if err != nil {
+			log.Println("Bot handler log:(ListVerificationParamsHandler) - Group not set up for user:", userID)
+			return c.Send("You are not associated with any group. Use /setup first.")
+		}
 
-        // Fetch group configuration
-        groupConfig, exists := storage.VerificationParamsMap[groupChatID]
-        if !exists || len(groupConfig.VerificationParams) == 0 {
-            log.Println("No verification parameters found for group:", groupChatID)
-            return c.Send("No verification parameters have been added yet. Use /add_verification_params to add one.")
-        }
+		groupConfig, err := storage_db.GetGroupConfigParams(groupChatID)
+		if err != nil || len(groupConfig.VerificationParams) == 0 {
+			log.Println("Bot handler log:(ListVerificationParamsHandler) - No verification parameters found for group:", groupChatID)
+			return c.Send("No verification parameters have been added yet. Use /add_verification_params to add one.")
+		}
 
         // Fetch restriction type
         restrictionType := groupConfig.RestrictionType
@@ -1009,7 +1028,7 @@ func ListVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context) err
             // Convert the parameter to JSON with indentation
             formattedJSON, err := json.MarshalIndent(param, "", "    ")
             if err != nil {
-                log.Printf("Failed to format JSON for param %d: %v", i+1, err)
+                log.Printf("Bot handler log:(ListVerificationParamsHandler) - Failed to format JSON for param %d: %v", i+1, err)
                 response.WriteString("Error formatting JSON\n\n")
                 continue
             }
@@ -1037,11 +1056,15 @@ func SetActiveVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context
 
 		// Determine where the handler was called: in a group or in a private chat
 		if c.Chat().Type == telebot.ChatPrivate {
-			// Check if there is a saved group for this administrator
-			if groupID, exists := storage.GroupSetupState[userID]; exists {
-				groupChatID = groupID
-			} else {
+			groupID, err := storage_db.GetIdGroupFromGroupSetupState(userID)
+			if err != nil {
+				log.Println("Bot handler log:(SetActiveVerificationParamsHandler) - Group not set up for user:", userID)
 				return c.Send("You need to specify a group for verification setup.")
+			} else if groupID == 0 {
+				log.Println("Bot handler log:(SetActiveVerificationParamsHandler) - Id group = 0. Group not set up for user:", userID)
+				return c.Send("You need to specify a group for verification setup.")
+			} else {
+				groupChatID = groupID
 			}
 		} else {
 			groupChatID = c.Chat().ID
@@ -1052,9 +1075,11 @@ func SetActiveVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context
 			return c.Send("You are not an administrator in this group.")
 		}
 
-		// Fetch the group's verification parameters
-		groupConfig, exists := storage.VerificationParamsMap[groupChatID]
-		if !exists || len(groupConfig.VerificationParams) == 0 {
+		groupConfig, err := storage_db.GetGroupConfigParams(groupChatID)
+		if err != nil {
+			log.Printf("Bot handler log:(SetActiveVerificationParamsHandler) - Error fetching group configuration: %v", err)
+			return c.Send("No verification parameters have been set for this group. Error fetching group configuration")
+		} else if len(groupConfig.VerificationParams) == 0 {
 			return c.Send("No verification parameters have been set for this group.")
 		}
 
@@ -1096,9 +1121,7 @@ func SetActiveVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context
 					return err
 				}
 
-				// Update the active index
-				groupConfig.ActiveIndex = index
-				storage.VerificationParamsMap[groupChatID] = groupConfig
+				storage_db.SetActiveVerificationParams(groupChatID, index)
 
 				// Notify the admin of the change
 				typeStr, ok := groupConfig.VerificationParams[index].Query["type"].(string)
@@ -1122,7 +1145,12 @@ func SetActiveVerificationParamsHandler(bot *telebot.Bot) func(c telebot.Context
 
 
 func checkUserAsAdminInGroup(userID, groupID int64) bool {
-	if storage.GroupSetupState[userID] == groupID {
+	groupIdByUser, err := storage_db.GetIdGroupFromGroupSetupState(userID)
+	if err != nil {
+		log.Println("Bot handler log:(checkUserAsAdminInGroup) - Group not set up for user:", userID)
+		return false
+	}
+	if groupIdByUser == groupID {
 		return true
 	} else {
 		return false
@@ -1133,9 +1161,8 @@ func GetAuthTokenFromAdmin(groupID int64, userID int64) (string, bool) {
 	DataMutex.Lock()
 	defer DataMutex.Unlock()
 
-	// Check if the user list exists for the group
-	users, exists := storage.VerifiedUsersList[groupID]
-	if !exists {
+	users, err := storage_db.GetVerifiedUsersList(groupID)
+	if err != nil {
 		return "", false // Group not found
 	}
 

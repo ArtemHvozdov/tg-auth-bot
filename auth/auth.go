@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/ArtemHvozdov/tg-auth-bot/config"
-	"github.com/ArtemHvozdov/tg-auth-bot/storage"
+	"github.com/ArtemHvozdov/tg-auth-bot/storage_db"
 
 	"github.com/ethereum/go-ethereum/common"
 	circuits "github.com/iden3/go-circuits/v2"
@@ -48,7 +48,7 @@ func (m KeyLoader) Load(id circuits.CircuitID) ([]byte, error) {
 var requestMap = make(map[string]AuthRequestData)
 
 // GenerateAuthRequest generates a new authentication request and returns it as a JSON object
-func GenerateAuthRequest(userID int64, params storage.VerificationParams) ([]byte, error) {
+func GenerateAuthRequest(userID int64, params storage_db.VerificationParams) ([]byte, error) {
 	rURL := cfg.NgrokURL
 	sessionID := "1"                                     // Use unique session IDs in production
 	//sessionID := strconv.Itoa(int(time.Now().UnixNano()))
@@ -124,7 +124,10 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 
 	// Conevrting the token to a string
 	tokenStr := string(tokenBytes)
-	log.Println("Token string:", tokenStr)
+	if tokenStr != "" {
+		log.Println("Token string there is. All is OK!")
+	}
+	//log.Println("Token string:", tokenStr)
 
 	
 	ethURL := fmt.Sprintf("https://polygon-amoy.infura.io/v3/%s", cfg.InfuraKey)
@@ -182,10 +185,10 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 		log.Println("Verification failed:", err)
 
 		// Getting the user using the GetUser method
-		_, exists := storage.GetUser(userID)
-		if exists {
+		_, err := storage_db.GetUser(userID)
+		if err == nil {
 			// Update user status via UpdateField
-			storage.UpdateField(userID, func(user *storage.UserVerification) {
+			storage_db.UpdateField(userID, func(user *storage_db.UserVerification) {
 				user.IsPending = false
 				user.Verified = false
 			})
@@ -196,32 +199,28 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update the user status if verification is successful
-	userData, exists := storage.GetUser(userID)
-	if exists {
-		storage.UpdateField(userID, func(user *storage.UserVerification) {
+	userData, err := storage_db.GetUser(userID)
+	if err == nil {
+		userName := userData.Username
+		userAuthGroupID := userData.GroupID
+
+		typeVerification, err := storage_db.GetVerificationType(userAuthGroupID)
+		if err != nil {
+			log.Println("Error getting verification type from database:", err)
+		}
+
+		if userData.Role == "admin" {
+			storage_db.AddVerifiedUser(userAuthGroupID, userID, userName, tokenStr, typeVerification, tokenStr)
+		} else {
+			storage_db.AddVerifiedUser(userAuthGroupID, userID, userName, tokenStr, typeVerification, "")
+		}
+		log.Printf("User @%s (ID: %d) successfully verified via callback.", userData.Username, userID)
+		
+		storage_db.UpdateField(userID, func(user *storage_db.UserVerification) {
 			user.IsPending = false
 			user.Verified = true
 		})
-		log.Printf("User @%s (ID: %d) successfully verified via callback.", userData.Username, userID)
 	}
-
-	// Add user data and token in the stroage
-	userName := userData.Username
-	userAuthGroupID := userData.GroupID
-
-	configGroupParams := storage.VerificationParamsMap[userAuthGroupID]
-
-	params := configGroupParams.VerificationParams[configGroupParams.ActiveIndex]
-
-	typeVerification := params.Query["type"].(string)
-
-	if userData.Role == "admin" {
-		storage.AddVerifiedUser(userAuthGroupID, userID, userName, tokenStr, typeVerification, tokenStr)
-	} else {
-		storage.AddVerifiedUser(userAuthGroupID, userID, userName, tokenStr, typeVerification, "")
-	}
-	
-	//storage.AddVerifiedUser(userAuthGroupID, userID, userName, tokenStr, typeVerification, "")
 
 	// Response to request with verification result
 	responseBytes, err := json.Marshal(authResponse)
@@ -243,9 +242,17 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 	w.Write(responseBytes)
 	log.Println("Verification passed")
 
-	// Logging user information
-	log.Println("Information of new member:", userData)
-	
+
+	updatedUser, err := storage_db.GetUser(userID)
+	if err != nil {
+		log.Println("Error getting user from database:", err)
+	}
+
+	log.Println("Auth pack logs (Callback func): Updated user:")
+	log.Println("Auth pack logs (Callback func): User name:", updatedUser.Username)
+	log.Println("Auth pack logs (Callback func): Is Pending:", updatedUser.IsPending)
+	log.Println("Auth pack logs (Callback func): Verified:", updatedUser.Verified)
+	log.Println("Auth pack logs (Callback func): User role:", updatedUser.Role)
 }
 
 

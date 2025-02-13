@@ -3,4 +3,7 @@ flow.txt
 keys
 setup_JSON_Scheme.txt
 data
-tasks.txt
+database_documentation.txt
+state_bot.txt
+db_buckets.txt
+storage_old
