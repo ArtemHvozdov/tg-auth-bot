@@ -7,7 +7,7 @@ import (
 
 	"github.com/ArtemHvozdov/tg-auth-bot/bot/handlers"
 	"github.com/ArtemHvozdov/tg-auth-bot/config"
-	"github.com/ArtemHvozdov/tg-auth-bot/storage"
+	// "github.com/ArtemHvozdov/tg-auth-bot/storage_db"
 
 	//"github.com/ArtemHvozdov/tg-auth-bot/storage"
 
@@ -44,13 +44,14 @@ func StartBot(cfg config.Config) error {
 		{Text: "set_active_verification_params", Description: "Set active verification parameters"},
 		//{Text: "add_type_restriction", Description: "Add type restriction"},
 		{Text: "set_type_restriction", Description: "Set type restriction"},
-		{Text: "delete_verification_params", Description: "Delete verification params"},
+		{Text: "delete_all_verification_params", Description: "delete_all_verification_params"},
+		{Text: "delete_all_verified_users", Description: "delete_all_verified_users"},
 	})
 	if err != nil {
 		log.Printf("Failed to set bot commands: %v", err)
 	}
 
-	handlers.ListenForStorageChanges(bot)
+	handlers.ListenForstorage_dbChanges(bot)
 
 	// Handlers
 	bot.Handle(telebot.OnUserJoined, handlers.NewUserJoinedHandler(bot))
@@ -65,6 +66,7 @@ func StartBot(cfg config.Config) error {
 	bot.Handle("/set_active_verification_params", handlers.SetActiveVerificationParamsHandler(bot))
 	bot.Handle("/set_type_restriction", handlers.SetTypeRestrictionHandler(bot))
 	bot.Handle("/delete_all_verification_params", handlers.DeleteAllVerificationParamsHandler(bot))
+	bot.Handle("/delete_all_verified_users", handlers.DeleteAllVerifiedUsersHandler(bot))
 
 
 		
@@ -85,7 +87,7 @@ func StartBot(cfg config.Config) error {
 	log.Println("Bot started...")
 	bot.Start()
 
-	log.Println("Default user storage:", storage.UserStore)
+	// log.Println("Default user storage:", storage.UserStore)
 	return nil
 }
 

@@ -27,7 +27,7 @@ func main() {
 	cfg := config.LoadConfig() // Loading the configuration from a file or environment variables
 
 	// Initialize the database
-	dbPath := "storage_db/data/tg-bot.db"
+	dbPath := "./data/tg-bot.db"
 	err := storage_db.InitDB(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
@@ -46,10 +46,15 @@ func main() {
 		}
 	}()
 
+	go func ()  {
+		// Run webserver
+		web.StartServer()
+	}()
+
 	// Wait for termination signal
 	<-stop
 	log.Println("Shutting down gracefully...")
 
-	// Run webserver
-	web.StartServer()
+	// // Run webserver
+	// web.StartServer()
 }

@@ -2,14 +2,13 @@ package storage_db
 
 import (
 	"encoding/json"
-	// "errors"
 	"fmt"
 
 	"log"
 	"sync"
 
 	bolt "go.etcd.io/bbolt"
-	//"gopkg.in/telebot.v3"
+	"gopkg.in/telebot.v3"
 )
 
 var (
@@ -17,29 +16,28 @@ var (
 	DataMutex    sync.Mutex
 	DataChanges = make(chan UserChangeEvent, 100)
 
-	// storages
-	// UserStore = make(map[int64]*UserVerification)
-	// VerificationParamsMap = make(map[int64]GroupVerificationConfig)
-	// GroupSetupState = make(map[int64]int64)
-	//VerifiedUsersList = make(map[int64][]VerifiedUser)
-
 )
 
 // InitDB initializes the BoltDB database
 func InitDB(dbPath string) error {
 	var err error
+	log.Println("Opening database...")
+
 	db, err = bolt.Open(dbPath, 0600, nil)
 	if err != nil {
 		return err
 	}
+	log.Println("Database opened successfully")
 
 	// Create the main bucket if it doesn't exist
 	return db.Update(func(tx *bolt.Tx) error {
+		log.Println("Creating buckets if not exists...")
+
 		buckets := []string{
-			"UserStore",				// []byte("UserStore")
-			"VerificationParamsStore",  // []byte("VerificationParamsStore")
-			"GroupSetupState",			// []byte("GroupSetupState")
-			"VerifiedUsersList",		// []byte("VerifiedUsersList")
+			"UserStore",
+			"VerificationParamsStore",
+			"GroupSetupState",
+			"VerifiedUsersList",
 		}
 
 		for _, bucket := range buckets {
@@ -48,9 +46,11 @@ func InitDB(dbPath string) error {
 				return fmt.Errorf("ошибка при создании bucket %s: %w", bucket, err)
 			}
 		}
+		log.Println("Buckets created successfully")
 		return nil
 	})	
 }
+
 
 // CloseDB closes the BoltDB database
 func CloseDB() error {
@@ -72,21 +72,21 @@ type UserVerification struct {
 	Verified  bool
 	SessionID int64
 	RestrictStatus bool
-	//verifyMsg *VerifyMsg
+	VerifyMsg *VerifyMsg
 	AuthToken string
 	Role string
 }
-
-// Struct for the verification message
-// type VerifyMsg struct {
-// 	msgId int
-// 	msg *telebot.Message
-// }
 
 // UserChangeEvent - user data change event structure for the channel
 type UserChangeEvent struct {
 	UserID int64              // ID user
 	Data   *UserVerification  // New dara by user
+}
+
+// Struct for the verification message
+type VerifyMsg struct {
+	MsgId int
+	Msg *telebot.Message
 }
 
 // Struct for the config veroification params for the group
@@ -153,8 +153,7 @@ func AddOrUpdateUser(userID int64, user *UserVerification) error {
 
 // UpdateField - updates specified user fields
 func UpdateField(userID int64, updateFunc func(*UserVerification)) error {
-	DataMutex.Lock()
-	defer DataMutex.Unlock()
+	log.Println("UpdateField DB is called")
 
 	var user *UserVerification
 
@@ -188,11 +187,17 @@ func UpdateField(userID int64, updateFunc func(*UserVerification)) error {
 	})
 
 	if err == nil {
+		log.Println("UpdateField DB sending event to the channel")
 		// Sending an event to a channel
 		DataChanges <- UserChangeEvent{
 			UserID: userID,
 			Data:   user,
 		}
+		log.Println("UpdateField DB logs: info updated user:") 
+		log.Println("Name:", user.Username)
+		log.Println("IsPending:", user.IsPending)
+		log.Println("Verified:", user.Verified)
+		log.Println("User role:", user.Role)
 	}
 
 	return err
@@ -200,9 +205,6 @@ func UpdateField(userID int64, updateFunc func(*UserVerification)) error {
 
 // DeleteUser - removes a user from the repository
 func DeleteUser(userID int64) error {
-	DataMutex.Lock()
-	defer DataMutex.Unlock()
-
 	err := db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte("UserStore"))
 		if bucket == nil {
@@ -212,14 +214,6 @@ func DeleteUser(userID int64) error {
 		// Delete data by user
 		return bucket.Delete(itob(userID))
 	})
-
-	if err == nil {
-		// Send delete event (Data becomes nil)
-		DataChanges <- UserChangeEvent{
-			UserID: userID,
-			Data:   nil,
-		}
-	}
 
 	return err
 }
@@ -250,6 +244,112 @@ func GetUser(userID int64) (*UserVerification, error) {
 	}
 
 	return &user, nil
+}
+
+// Method for add verification message
+func AddVerificationMsg(userID int64, msgID int, msg *telebot.Message) error {
+	return db.Update(func(tx *bolt.Tx) error {
+		// Open bucket UserStore
+		bucket := tx.Bucket([]byte("UserStore"))
+		if bucket == nil {
+			log.Println("bucket UserStore not found")
+			return nil
+		}
+
+		// Get user data from the database
+		data := bucket.Get(itob(userID))
+		if data == nil {
+			log.Println("user ID not found")
+			return nil
+		}
+
+		// Decode JSON to struct
+		var user UserVerification
+		if err := json.Unmarshal(data, &user); err != nil {
+			return err
+		}
+
+		// Update verifyMsg
+		user.VerifyMsg = &VerifyMsg{
+			MsgId: msgID,
+			Msg:   msg,
+		}
+
+		// Encode back to JSON
+		updatedData, err := json.Marshal(user)
+		if err != nil {
+			return err
+		}
+
+		// Save updated data to the database
+		if err := bucket.Put(itob(userID), updatedData); err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
+func DeleteVerifyMessage(bot *telebot.Bot, userID int64) error {
+	// Get user data from the database
+	user, err := GetUser(userID)
+	if err != nil {
+		log.Printf("Failed to get user %d: %v", userID, err)
+		return err
+	}
+
+	// Check if there is a verification message to delete
+	if user.VerifyMsg.MsgId == 0 && user.VerifyMsg.Msg == nil {
+		log.Printf("No verification message to delete for user %d", userID)
+		return nil
+	}
+
+	// Delete the verification message
+	err = bot.Delete(user.VerifyMsg.Msg)
+	if err != nil {
+		log.Printf("Failed to delete verification message for user %d: %v", userID, err)
+		return err
+	}
+
+	log.Printf("Verification message deleted for user %d: message ID %d", userID, user.VerifyMsg.MsgId)
+
+	// Upadate user data in the database
+	user.VerifyMsg.MsgId = 0
+	user.VerifyMsg.Msg = nil // panicc
+
+	return nil
+}
+
+
+// GetUserGroupID return user's GroupID
+func GetUserGroupID(userID int64) (int64, error) {
+	var groupID int64
+
+	err := db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte("UserStore"))
+		if bucket == nil {
+			return fmt.Errorf("bucket UserStore not found")
+		}
+
+		data := bucket.Get(itob(userID))
+		if data == nil {
+			return fmt.Errorf("user %d not found", userID)
+		}
+
+		var user UserVerification
+		if err := json.Unmarshal(data, &user); err != nil {
+			return fmt.Errorf("failed to unmarshal user data: %v", err)
+		}
+
+		groupID = user.GroupID
+		return nil
+	})
+
+	if err != nil {
+		return 0, err
+	}
+
+	return groupID, nil
 }
 
 // ========================
@@ -314,6 +414,202 @@ func GetRestrictionType(groupID int64) (string, error) {
 	return restrictionType, err
 }
 
+// GetVerificationType gets value "type" from VerificationParam
+func GetVerificationType(groupID int64) (string, error) {
+	var verificationType string
+
+	err := db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte("VerificationParamsStore"))
+		if bucket == nil {
+			log.Println("bucket VerificationParamsStore not found")
+			return nil
+		}
+
+		groupData := bucket.Get(itob(groupID))
+		if groupData == nil {
+			log.Println("group ID not found")
+			return nil
+		}
+
+		var configGroupParams GroupVerificationConfig
+		if err := json.Unmarshal(groupData, &configGroupParams); err != nil {
+			return err
+		}
+
+		if len(configGroupParams.VerificationParams) == 0 {
+			log.Println("no verification parameters found")
+			return nil
+		}
+
+		activeIndex := configGroupParams.ActiveIndex
+		if activeIndex >= len(configGroupParams.VerificationParams) {
+			log.Println("active index out of range")
+			return nil
+		}
+
+		params := configGroupParams.VerificationParams[activeIndex]
+		verificationType = params.Query["type"].(string)
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	return verificationType, nil
+}
+
+// SaveVerificationParams save parametrs veriofication to DB
+func SaveVerificationParams(groupID int64, params VerificationParams) error {
+	return db.Update(func(tx *bolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists([]byte("VerificationParamsStore"))
+		if err != nil {
+			return err
+		}
+
+		groupData := bucket.Get([]byte(itob(groupID)))
+		var groupConfig GroupVerificationConfig
+
+		if groupData != nil {
+			if err := json.Unmarshal(groupData, &groupConfig); err != nil {
+				return err
+			}
+		} else {
+			groupConfig = GroupVerificationConfig{
+				VerificationParams: []VerificationParams{},
+				ActiveIndex:        -1, // No active params
+			}
+		}
+
+		// Add the new verification params to the group
+		groupConfig.VerificationParams = append(groupConfig.VerificationParams, params)
+
+		// Set the active index if it's the first params
+		if groupConfig.ActiveIndex == -1 {
+			groupConfig.ActiveIndex = 0
+		}
+
+		// Serialize the updated data
+		updatedData, err := json.Marshal(groupConfig)
+		if err != nil {
+			return err
+		}
+
+		// Save the updated data to the database
+		return bucket.Put([]byte(itob(groupID)), updatedData)
+	})
+}
+
+// Delete all verification params for the group using groupID
+func DeleteAllVerificationParams(groupID int64) error {
+	return db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte("VerificationParamsStore"))
+		if bucket == nil {
+			return fmt.Errorf("bucket VerificationParamsStore not found")
+		}
+
+		return bucket.Delete(itob(groupID))
+	})
+}
+
+// Ger active verification params
+func GetActiveVerificationParams(groupID int64) (VerificationParams, error) {
+	var params VerificationParams
+
+	err := db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte("VerificationParamsStore"))
+		if bucket == nil {
+			return fmt.Errorf("bucket VerificationParamsStore not found")
+		}
+
+		groupData := bucket.Get([]byte(itob(groupID)))
+		if groupData == nil {
+			return fmt.Errorf("group ID %v not found", groupID)
+		}
+
+		var groupConfig GroupVerificationConfig
+		if err := json.Unmarshal(groupData, &groupConfig); err != nil {
+			return err
+		}
+
+		if groupConfig.ActiveIndex == -1 {
+			return fmt.Errorf("no active verification params found")
+		}
+
+		params = groupConfig.VerificationParams[groupConfig.ActiveIndex]
+		return nil
+	})
+
+	if err != nil {
+		return VerificationParams{}, err
+	}
+
+	return params, nil
+}
+
+
+// Get group config parametrs
+func GetGroupConfigParams(groupID int64) (GroupVerificationConfig, error) {
+	var groupConfig GroupVerificationConfig
+
+	err := db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte("VerificationParamsStore"))
+		if bucket == nil {
+			return fmt.Errorf("bucket VerificationParamsStore not found")
+		}
+
+		groupData := bucket.Get([]byte(itob(groupID)))
+		if groupData == nil {
+			return fmt.Errorf("group ID %v not found", groupID)
+		}
+
+		if err := json.Unmarshal(groupData, &groupConfig); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return GroupVerificationConfig{}, err
+	}
+
+	return groupConfig, nil
+}
+
+// SetActiveVerificationParams set active verification params
+func SetActiveVerificationParams(groupID int64, index int) error {
+	return db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte("VerificationParamsStore"))
+		if bucket == nil {
+			return fmt.Errorf("bucket VerificationParamsStore not found")
+		}
+
+		// Get the group data from the DB
+		groupData := bucket.Get([]byte(itob(groupID)))
+		var groupConfig GroupVerificationConfig
+
+		if groupData != nil {
+			if err := json.Unmarshal(groupData, &groupConfig); err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("group ID %v not found", groupID)
+		}
+
+		// Set new active index
+		groupConfig.ActiveIndex = index
+
+		updatedData, err := json.Marshal(groupConfig)
+		if err != nil {
+			return err
+		}
+
+		// Save the updated data to the DB
+		return bucket.Put([]byte(itob(groupID)), updatedData)
+	})
+}
+
 // ========================
 // Functions for the GroupSetupState
 
@@ -322,7 +618,7 @@ func AddAdminUser(userID, groupID int64) error {
 	return db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte("GroupSetupState"))
 		if bucket == nil {
-			return fmt.Errorf("bucket GroupSetupState not found")
+			return fmt.Errorf("DB logs: bucket GroupSetupState not found")
 		}
 
 		// Save groupID as a value using userID as a key
@@ -337,7 +633,7 @@ func GetIdGroupFromGroupSetupState(userID int64) (int64, error) {
 	err := db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte("GroupSetupState"))
 		if bucket == nil {
-			return fmt.Errorf("bucket GroupSetupState not found")
+			return fmt.Errorf("DB logs: bucket GroupSetupState not found")
 		}
 
 		// Get the value by key
@@ -360,6 +656,21 @@ func GetIdGroupFromGroupSetupState(userID int64) (int64, error) {
 // AddVerifiedUser - add user to verified list in database
 func AddVerifiedUser(groupID int64, userID int64, userName string, VerifiedToken string, typeVerification string, authToken string) {
 	db.Update(func(tx *bolt.Tx) error {
+		log.Println("AddVerifiedUser DB is called")
+		log.Println("Agruments func AddVerifiedUser:")
+		log.Println("groupID:", groupID)
+		log.Println("userID:", userID)
+		log.Println("userName:", userName)
+		log.Println("VerifiedToken:", VerifiedToken)
+		log.Println("typeVerification:", typeVerification)
+		if authToken != "" {
+			log.Println("authToken: there is it! All OK!",)
+			// Opitional
+			// log.Println("authToken:", authToken)
+		} else {
+			log.Println("authToken: parameter is empty")
+		}
+
 		// Get the VerifiedUsersList bucket
 		bucket := tx.Bucket([]byte("VerifiedUsersList"))
 
@@ -418,49 +729,128 @@ func AddVerifiedUser(groupID int64, userID int64, userName string, VerifiedToken
 			return err
 		}
 
+		log.Printf("AddVerifiedUser logs: User ID %d added/updated in group %d with data: %s", userID, groupID, string(data)) // LOG
+
 		return nil
 	})
 }
 
-
 // RemoveVerifiedUser - removes a user from VerifiedUsersList by group ID and user ID in database
 func RemoveVerifiedUser(groupID int64, userID int64) {
-	db.Update(func(tx *bolt.Tx) error {
-		// Get the VerifiedUsersList bucket
-		bucket := tx.Bucket([]byte("VerifiedUsersList"))
+	if db == nil {
+		log.Println("ERROR: Database not initialized")
+		return
+	}
 
-		// Get the group bucket
+	err := db.Update(func(tx *bolt.Tx) error {
+		log.Println("RemoveVerifiedUser DB is called")
+		log.Printf("Arguments func RemoveVerifiedUser: groupID=%d, userID=%d", groupID, userID)
+
+		bucket := tx.Bucket([]byte("VerifiedUsersList"))
+		if bucket == nil {
+			log.Println("ERROR: VerifiedUsersList bucket not found")
+			return nil
+		}
+
 		groupBucket := bucket.Bucket(itob(groupID))
 		if groupBucket == nil {
 			log.Printf("Group %d not found in VerifiedUsersList", groupID)
 			return nil
 		}
 
-		// Get the user bucket
-		userBucket := groupBucket.Bucket(itob(userID))
-		if userBucket == nil {
+		// Check if the user exists in the group's list
+		userData := groupBucket.Get(itob(userID))
+		if userData == nil {
 			log.Printf("User %d not found in group %d", userID, groupID)
 			return nil
 		}
 
-		// Delete the user bucket
-		err := groupBucket.DeleteBucket(itob(userID))
+		// Remove the user from the group
+		err := groupBucket.Delete(itob(userID))
 		if err != nil {
+			log.Printf("ERROR: Failed to remove user %d from group %d: %v", userID, groupID, err)
 			return err
 		}
+		log.Printf("User %d removed from group %d", userID, groupID)
 
-		// If the group is now empty, remove the group
-		if groupBucketStats := groupBucket.Stats(); groupBucketStats.KeyN == 0 {
+		// Check if the group is empty after the user removal
+		if groupBucket.Stats().KeyN == 0 {
 			err := bucket.DeleteBucket(itob(groupID))
 			if err != nil {
+				log.Printf("ERROR: Failed to remove empty group %d: %v", groupID, err)
 				return err
 			}
+			log.Printf("Group %d removed from VerifiedUsersList (empty after user removal)", groupID)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		log.Printf("ERROR: RemoveVerifiedUser failed: %v", err)
+	}
+}
+
+
+
+// Delete all verified users for the group using groupID
+func DeleteAllVerifiedUsers(groupID int64) {
+	db.Update(func(tx *bolt.Tx) error {
+		// Get the VerifiedUsersList bucket
+		bucket := tx.Bucket([]byte("VerifiedUsersList"))
+
+		// Delete the group bucket
+		err := bucket.DeleteBucket(itob(groupID))
+		if err != nil {
+			return err
 		}
 
 		return nil
 	})
 }
 
+// GetVerifiedUsersList - returns a list of verified users for the group
+func GetVerifiedUsersList(groupID int64) ([]VerifiedUser, error) {
+	var users []VerifiedUser
+
+	err := db.View(func(tx *bolt.Tx) error {
+		// Get the VerifiedUsersList bucket
+		bucket := tx.Bucket([]byte("VerifiedUsersList"))
+		if bucket == nil {
+			return fmt.Errorf("bucket VerifiedUsersList not found")
+		}
+
+		// Get the group bucket
+		groupBucket := bucket.Bucket(itob(groupID))
+		if groupBucket == nil {
+			return fmt.Errorf("group %d not found in VerifiedUsersList", groupID)
+		}
+
+		// Iterate over the users in the group
+		err := groupBucket.ForEach(func(k, v []byte) error {
+			if v == nil {
+				return nil
+			}
+		
+			var user VerifiedUser
+			if err := json.Unmarshal(v, &user); err != nil {
+				log.Printf("Error decoding user %s in group %d: %v", k, groupID, err)
+				return nil // Пропускаем ошибку, но не останавливаем функцию
+			}
+		
+			users = append(users, user)
+			return nil
+		})
+
+		return err
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return users, nil
+}
 
 
 // Helper functions
