@@ -27,7 +27,13 @@ func main() {
 	cfg := config.LoadConfig() // Loading the configuration from a file or environment variables
 
 	// Initialize the database
-	dbPath := "./data/tg-bot.db"
+	dataDir := "./data"
+	dbPath := dataDir + "/tg-bot.db"
+
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		log.Fatalf("Ошибка при создании папки %s: %v", dataDir, err)
+	}
+
 	err := storage_db.InitDB(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
