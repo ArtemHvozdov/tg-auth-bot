@@ -29,26 +29,7 @@ Use the go mod commands to download and sync the required dependencies:
 go mod tidy
 ```
 
-Step 4: Create folder for database
-
-In the root of the project you need to create an empty folder "data".
-
-```bash
-cd tg_auth-bot
-mkdir data
-```
-
-When you run the bot the file “tg-bot.db” will be created in the “data” folder. 
-You can create it yourself in the folder "data" too.
-
-```bash
-cd tg_auth-bot
-mkdir data
-cd data
-touch tg-bot.db
-```
-
-Step 5 Run the Bot
+Step 4 Run the Bot
 
 Run the bot using the following command:
 
